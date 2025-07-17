@@ -888,4 +888,8 @@ class EnhancedICTTrader:
     def get_daily_trades(self):
         """Get current daily trades count"""
         return self.daily_trades
+
+    def get_consecutive_losses(self):
+        """Get current consecutive losses count"""
+        return self.performance.get('consecutive_losses', 0)
     
