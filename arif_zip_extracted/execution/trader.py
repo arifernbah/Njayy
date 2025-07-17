@@ -21,7 +21,9 @@ class EnhancedICTTrader:
             "consecutive_losses": 0,
             "daily_pnl": 0.0,
             "total_pnl": 0.0,
-            "win_rate": 0.0
+            "win_rate": 0.0,
+            "max_balance": 0.0,
+            "min_balance": float('inf')
         }
         
         # Enhanced features
@@ -158,7 +160,13 @@ class EnhancedICTTrader:
             balances = self._execute_with_retry(self.client.futures_account_balance)
             for b in balances:
                 if b['asset'] == 'USDT':
-                    return float(b['balance'])
+                    balance = float(b['balance'])
+                    # Update max/min balance for drawdown tracking
+                    if balance > self.performance['max_balance']:
+                        self.performance['max_balance'] = balance
+                    if balance < self.performance['min_balance']:
+                        self.performance['min_balance'] = balance
+                    return balance
             return 0.0
         except Exception as e:
             logger.error(f"Failed to get balance: {e}")
@@ -759,4 +767,12 @@ class EnhancedICTTrader:
         if total == 0:
             return 0
         return round((wins / total) * 100, 1)
+
+    def get_drawdown(self):
+        """Return drawdown percentage from max_balance to min_balance"""
+        max_balance = self.performance.get('max_balance', 0)
+        min_balance = self.performance.get('min_balance', 0)
+        if max_balance == 0 or min_balance == float('inf'):
+            return 0.0
+        return ((max_balance - min_balance) / max_balance) * 100
     
