@@ -864,3 +864,17 @@ class EnhancedICTTrader:
             return 0.0
         return ((max_balance - min_balance) / max_balance) * 100
     
+    def get_consecutive_losses(self):
+        return self.performance.get('consecutive_losses', 0)
+
+    def calculate_position_size(self, signal, risk):
+        # risk: desimal, misal 0.02 untuk 2%
+        balance = self.get_account_balance()
+        risk_amount = balance * risk
+        risk_per_unit = abs(signal.entry - signal.sl)
+        if risk_per_unit <= 0:
+            logger.error("Invalid risk calculation - SL too close to entry")
+            return 0
+        position_size = risk_amount / risk_per_unit
+        return round(position_size, 4)
+    
