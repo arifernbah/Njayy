@@ -3,7 +3,7 @@ requests==2.31.0
 python-dotenv==1.0.1
 pandas==2.2.2
 numpy==1.26.4
-
-# Untuk logging dan Telegram
 urllib3==2.2.1
 certifi==2024.2.2
+
+# Note: Modules like threading, json, time, statistics, collections, logging are part of Python standard library and do not need to be listed here.
