@@ -55,6 +55,7 @@ class ICTBot:
             
             # Process each trading pair
             for pair in self.trading_pairs:
+                self.trader.symbol = pair  # Set symbol untuk multi-pair
                 # ✅ FIXED: Pass symbol parameter to analyze_bias
                 bias = self.analyzer.analyze_bias(pair)
                 if not bias['valid']:
