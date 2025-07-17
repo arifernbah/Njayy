@@ -53,17 +53,43 @@ class EnhancedICTTrader:
                     entry = float(pos['entryPrice'])
                     size = abs(float(pos['positionAmt']))
                     direction = 'BUY' if float(pos['positionAmt']) > 0 else 'SELL'
-                    # SL/TP tidak bisa di-restore otomatis tanpa order history, set None
+                    # Fetch open orders for this symbol
+                    open_orders = self.client.futures_get_open_orders(symbol=symbol)
+                    sl_order = None
+                    tp1_order = None
+                    tp2_order = None
+                    # Identify SL/TP orders
+                    limit_orders = [o for o in open_orders if o['type'] == 'LIMIT']
+                    stop_orders = [o for o in open_orders if o['type'] == 'STOP_MARKET']
+                    # SL: STOP_MARKET, side opposite, stopPrice < entry (BUY) or > entry (SELL)
+                    for o in stop_orders:
+                        if (direction == 'BUY' and float(o['stopPrice']) < entry) or (direction == 'SELL' and float(o['stopPrice']) > entry):
+                            sl_order = o
+                    # TP: LIMIT, side opposite, price > entry (BUY) or < entry (SELL)
+                    tp_candidates = []
+                    for o in limit_orders:
+                        if (direction == 'BUY' and float(o['price']) > entry) or (direction == 'SELL' and float(o['price']) < entry):
+                            tp_candidates.append(o)
+                    # Ambil dua TP terdekat dari entry
+                    tp_candidates.sort(key=lambda x: abs(float(x['price']) - entry))
+                    if len(tp_candidates) > 0:
+                        tp1_order = tp_candidates[0]
+                    if len(tp_candidates) > 1:
+                        tp2_order = tp_candidates[1]
                     self.active_positions[symbol] = {
                         'symbol': symbol,
                         'entry': entry,
-                        'sl': None,
-                        'tp1': None,
-                        'tp2': None,
+                        'sl': float(sl_order['stopPrice']) if sl_order else None,
+                        'tp1': float(tp1_order['price']) if tp1_order else None,
+                        'tp2': float(tp2_order['price']) if tp2_order else None,
                         'size': size,
                         'direction': direction,
                         'opened_at': None,
-                        'orders': {},
+                        'orders': {
+                            'sl_order': sl_order,
+                            'tp1_order': tp1_order,
+                            'tp2_order': tp2_order
+                        },
                         'sl_moved_to_be': False,
                         'tp1_hit': False,
                         'tp2_hit': False,
@@ -81,10 +107,10 @@ class EnhancedICTTrader:
                     }
             if self.active_positions:
                 from integrations.telegram import telegram
-                telegram.send_message(f"♻️ Bot restart: {len(self.active_positions)} open position(s) restored and will be monitored.")
+                telegram.send_message(f"♻️ Bot restart: {len(self.active_positions)} open position(s) with SL/TP restored and will be monitored.")
         except Exception as e:
             from utils.logger import logger
-            logger.error(f"Failed to restore open positions on startup: {e}")
+            logger.error(f"Failed to restore open positions/orders on startup: {e}")
 
     def _monitoring_loop(self):
         """Background monitoring for health checks and maintenance"""
