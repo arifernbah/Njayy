@@ -65,9 +65,16 @@ class ICTBot:
                 # Find signals with symbol parameter
                 signals = self.strategy.find_signals(bias, pair)
                 if signals:
+                    logger.info(f"Found {len(signals)} raw signals for {pair}")
+                    valid_signals = 0
                     for signal in signals:
                         if self.validate_signal(signal):
+                            valid_signals += 1
                             self.execute_signal(signal, bias)
+                    if valid_signals > 0:
+                        logger.info(f"✅ {valid_signals}/{len(signals)} signals passed filter for {pair}")
+                    else:
+                        logger.info(f"❌ 0/{len(signals)} signals passed filter for {pair}")
                 
                 # Manage positions
                 self.trader.manage_positions_enhanced()
