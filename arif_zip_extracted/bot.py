@@ -1,0 +1,200 @@
+from integrations.command_listener import start_command_listener
+import time
+from datetime import datetime
+from core.config import config
+from utils.logger import logger
+from integrations.telegram import telegram
+from strategies.ict_core import ICTStrategy
+from execution.trader import ICTTrader
+from analysis.bias import BiasAnalyzer
+
+class ICTBot:
+    def __init__(self):
+        self.author = "arifernbah1"
+        self.version = "8.1"
+        self.last_update = "2025-07-15 10:53:00"
+        
+        # Components
+        self.strategy = ICTStrategy()
+        self.trader = ICTTrader()
+        self.analyzer = BiasAnalyzer()
+        
+        # Performance Parameters
+        self.signal_target = f"{config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX} per day"
+        self.expected_wr = f"{config.TARGET_WIN_RATE}%"
+        self.max_drawdown = f"{config.MAX_DRAWDOWN}%"
+        
+        # Get settings from config
+        self.timeframes = config.get_timeframe_settings()
+        self.filters = config.get_filter_settings()
+        self.risk_management = config.get_risk_settings()
+        self.sessions = config.get_session_settings()
+        self.trading_pairs = config.TRADING_PAIRS
+
+    def start(self):
+        """Initialize and start the bot"""
+        try:
+            logger.info("Starting ICT Bot v8.1...")
+            self.send_startup_message()
+            
+            while True:
+                self.main_loop()
+                time.sleep(config.LOOP_INTERVAL)
+                
+        except Exception as e:
+            logger.error(f"Bot error: {e}")
+            if config.ENABLE_TELEGRAM:
+                telegram.send_message(f"⚠️ Bot Error: {e}")
+
+    def main_loop(self):
+        """Main bot loop"""
+        try:
+            # Check session
+            current_session = self.check_session()
+            if not current_session:
+                return
+            
+            # Process each trading pair
+            for pair in self.trading_pairs:
+                # ✅ FIXED: Pass symbol parameter to analyze_bias
+                bias = self.analyzer.analyze_bias(pair)
+                if not bias['valid']:
+                    logger.warning(f"Invalid bias for {pair}")
+                    continue
+                
+                # Find signals with symbol parameter
+                signals = self.strategy.find_signals(bias, pair)
+                if signals:
+                    for signal in signals:
+                        if self.validate_signal(signal):
+                            self.execute_signal(signal, bias)
+                
+                # Manage positions
+                self.trader.manage_positions()
+            
+            # Update status
+            self.update_status()
+            
+        except Exception as e:
+            logger.error(f"Main loop error: {e}")
+
+    def check_session(self):
+        """Check if current time is within trading session"""
+        current_time = datetime.utcnow().strftime("%H:%M")
+        
+        for session, times in self.sessions.items():
+            if times['start'] <= current_time <= times['end']:
+                return session
+        return None
+
+    def validate_signal(self, signal):
+        """Validate signal against filters"""
+        try:
+            return (
+                signal.strength >= self.filters['signal_strength'] and
+                signal.bias >= self.filters['bias_strength'] and
+                signal.regime >= self.filters['regime_score'] and
+                self.filters['vol_range'][0] <= signal.volatility <= self.filters['vol_range'][1]
+            )
+        except Exception as e:
+            logger.error(f"Signal validation error: {e}")
+            return False
+
+    def execute_signal(self, signal, bias):
+        """Execute validated signal"""
+        try:
+            # Calculate position size
+            risk = self.calculate_risk()
+            position_size = self.trader.calculate_position_size(signal, risk)
+            
+            # Execute trade
+            success = self.trader.execute_entry(signal, position_size)
+            
+            if success and config.ENABLE_TELEGRAM:
+                # Send signal notification
+                timestamp = datetime.utcnow().strftime("%H:%M UTC")
+                message = f"""
+📢 *ENTRY SIGNAL DETECTED*
+
+📌 *PAIR*: {signal.pair}
+🕒 *Time*: {timestamp}
+📊 *Bias*: {bias['direction']} ({bias['strength']:.1f})
+🧠 *Signal Strength*: {signal.strength}
+🧱 *OB + BOS Valid*: ✅
+🕳 *FVG*: ✅
+💧 *Liquidity Sweep*: ✅
+🔥 *Displacement Candle*: ✅
+⏰ *Killzone Active*: {'Ya' if self.strategy.in_killzone() else 'Tidak'}
+
+🎯 *ENTRY*: {signal.entry}
+🛡 *SL*: {signal.sl}
+🎯 *TP1*: {signal.tp1}
+🎯 *TP2*: {signal.tp2}
+⚖️ *Risk %*: {risk * 100:.1f}%
+💰 *Size*: {position_size}
+
+📈 *Win Rate Saat Ini*: ~{self.trader.get_win_rate()}%
+"""
+                telegram.send_message(message)
+                
+        except Exception as e:
+            logger.error(f"Signal execution error: {e}")
+
+    def calculate_risk(self):
+        """Calculate risk based on account conditions"""
+        try:
+            # Default risk
+            risk = self.risk_management['default_risk']
+            
+            # Check drawdown
+            if self.trader.get_drawdown() > 5:
+                risk = self.risk_management['reduced_risk']
+            
+            # Check consecutive losses
+            if self.trader.get_consecutive_losses() >= 2:
+                risk = self.risk_management['minimum_risk']
+                
+            return risk
+        except Exception as e:
+            logger.error(f"Risk calculation error: {e}")
+            return self.risk_management['minimum_risk']
+
+    def send_startup_message(self):
+        """Send startup message to Telegram"""
+        if not config.ENABLE_TELEGRAM:
+            return
+            
+        try:
+            msg = (
+                f"🚀 ICT Bot v8.1 Started\n"
+                f"👨‍💻 Author: {self.author}\n"
+                f"🕒 Started: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
+                f"📊 Settings:\n"
+                f"- Pairs: {', '.join(self.trading_pairs)}\n"
+                f"- Signals: {self.signal_target}\n"
+                f"- Min Score: {self.filters['signal_strength']}\n"
+                f"- Risk: {self.risk_management['default_risk']*100}%\n"
+                f"Bot is running..."
+            )
+            telegram.send_message(msg)
+        except Exception as e:
+            logger.error(f"Startup message error: {e}")
+
+    def update_status(self):
+        """Update bot status"""
+        try:
+            status = {
+                "running": True,
+                "current_trades": self.trader.get_active_trades(),
+                "daily_trades": self.trader.get_daily_trades(),
+                "performance": self.trader.get_performance()
+            }
+            
+            if status['daily_trades'] >= self.risk_management['max_trades']:
+                logger.info("Daily trade limit reached")
+        except Exception as e:
+            logger.error(f"Status update error: {e}")
+
+if __name__ == "__main__":
+    bot = ICTBot()
+    bot.start()
