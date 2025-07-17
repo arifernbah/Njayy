@@ -166,6 +166,7 @@ class EnhancedICTTrader:
                         self.performance['max_balance'] = balance
                     if balance < self.performance['min_balance']:
                         self.performance['min_balance'] = balance
+                    logger.info(f"Connected to Binance Futures. Current USDT balance: {balance}")
                     return balance
             return 0.0
         except Exception as e:
