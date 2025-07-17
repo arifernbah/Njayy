@@ -218,13 +218,13 @@ class EnhancedICTTrader:
             return False
         return True
 
-    def _execute_with_retry(self, func, *args, max_retries=None, delay=None):
+    def _execute_with_retry(self, func, *args, max_retries=None, delay=None, **kwargs):
         from core.config import config
         max_retries = max_retries or config.BINANCE_MAX_RETRIES
         delay = delay or config.BINANCE_RETRY_DELAY
         for attempt in range(max_retries):
             try:
-                return func(*args)
+                return func(*args, **kwargs)
             except Exception as e:
                 # Cek jika error karena rate limit (HTTP 429)
                 if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 429:
@@ -897,4 +897,8 @@ class EnhancedICTTrader:
     def get_consecutive_losses(self):
         """Get current consecutive losses count"""
         return self.performance.get('consecutive_losses', 0)
+
+    def get_performance(self):
+        """Return current performance dictionary"""
+        return self.performance
     
