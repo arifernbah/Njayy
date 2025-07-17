@@ -11,7 +11,7 @@ from integrations.telegram import telegram
 class EnhancedICTTrader:
     def __init__(self):
         self.client = Client(api_key=config.BINANCE_API_KEY, api_secret=config.BINANCE_SECRET)
-        self.symbol = None  # Default None, harus di-set dari luar
+        self.symbol = "BTCUSDT"  # Default symbol, tetap bisa diubah untuk multi-pair
         self.active_positions = {}
         self.daily_trades = 0
         self.leverage = 10
