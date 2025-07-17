@@ -20,6 +20,7 @@ class TelegramCommandListener:
             response = requests.get(url, timeout=10)
             if response.status_code != 200:
                 telegram.send_message(f"⚠️ Gagal polling Telegram: {response.status_code}")
+                time.sleep(10)
                 return
 
             data = response.json()
@@ -31,6 +32,7 @@ class TelegramCommandListener:
 
         except Exception as e:
             telegram.send_message(f"🚨 Command polling error: {e}")
+            time.sleep(10)
 
     def handle_command(self, message):
         """Handle supported Telegram commands"""
