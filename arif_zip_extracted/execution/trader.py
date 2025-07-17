@@ -7,6 +7,7 @@ import threading
 from collections import defaultdict
 import statistics
 from integrations.telegram import telegram
+import decimal
 
 class EnhancedICTTrader:
     def __init__(self):
@@ -342,6 +343,17 @@ class EnhancedICTTrader:
             logger.info(f"Cancelled orders: {cancelled_orders}")
         return cancelled_orders
 
+    def get_quantity_precision(self, symbol):
+        info = self.client.futures_exchange_info()
+        for s in info['symbols']:
+            if s['symbol'] == symbol:
+                for f in s['filters']:
+                    if f['filterType'] == 'LOT_SIZE':
+                        step_size = float(f['stepSize'])
+                        precision = abs(decimal.Decimal(str(step_size)).as_tuple().exponent)
+                        return precision
+        return 3  # default jika tidak ketemu
+
     def place_market_order_enhanced(self, side, quantity):
         """Enhanced market order with validation"""
         try:
@@ -353,6 +365,9 @@ class EnhancedICTTrader:
                 logger.error("Invalid quantity for market order")
                 return None
                 
+            precision = self.get_quantity_precision(self.symbol)
+            quantity = round(quantity, precision)
+
             order = self._execute_with_retry(
                 self.client.futures_create_order,
                 symbol=self.symbol,
@@ -381,6 +396,9 @@ class EnhancedICTTrader:
                 logger.error("Invalid parameters for stop order")
                 return None
                 
+            precision = self.get_quantity_precision(self.symbol)
+            quantity = round(quantity, precision)
+
             order = self._execute_with_retry(
                 self.client.futures_create_order,
                 symbol=self.symbol,
@@ -410,6 +428,9 @@ class EnhancedICTTrader:
                 logger.error("Invalid parameters for limit order")
                 return None
                 
+            precision = self.get_quantity_precision(self.symbol)
+            quantity = round(quantity, precision)
+
             order = self._execute_with_retry(
                 self.client.futures_create_order,
                 symbol=self.symbol,
