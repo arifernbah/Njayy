@@ -812,6 +812,10 @@ class EnhancedICTTrader:
             'connection_health': self.connection_retry_count < 3
         }
 
+    def get_active_trades(self):
+        # Mengembalikan jumlah posisi aktif yang sedang dimonitor bot
+        return len(self.active_positions)
+
     def shutdown(self):
         """Graceful shutdown"""
         logger.info("Shutting down Enhanced ICT Trader...")
