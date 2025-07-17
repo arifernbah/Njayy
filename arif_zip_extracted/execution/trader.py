@@ -11,7 +11,7 @@ from integrations.telegram import telegram
 class EnhancedICTTrader:
     def __init__(self):
         self.client = Client(api_key=config.BINANCE_API_KEY, api_secret=config.BINANCE_SECRET)
-        self.symbol = "BTCUSDT"
+        self.symbol = None  # Default None, harus di-set dari luar
         self.active_positions = {}
         self.daily_trades = 0
         self.leverage = 10
@@ -237,8 +237,12 @@ class EnhancedICTTrader:
         # (Opsional) telegram.send_message(f"Binance API error berulang pada {func.__name__}")
         return None
 
-    def get_account_balance(self):
+    def get_account_balance(self, symbol=None):
         """Get USDT balance from futures account with retry"""
+        symbol = symbol or self.symbol
+        if not symbol:
+            logger.error("Symbol belum di-set pada EnhancedICTTrader!")
+            raise ValueError("Symbol belum di-set pada EnhancedICTTrader!")
         try:
             if not self._rate_limit_check('balance'):
                 time.sleep(1)
