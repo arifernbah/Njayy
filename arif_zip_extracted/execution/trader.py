@@ -468,6 +468,34 @@ class EnhancedICTTrader:
             if not self.check_circuit_breaker():
                 return False
                 
+            # REAL-TIME PRICE VALIDATION
+            current_market_price = self.get_current_price_enhanced(self.symbol)
+            if current_market_price <= 0:
+                logger.error("Failed to get current market price")
+                return False
+                
+            # Check if signal price is too old (more than 2% difference)
+            price_diff_percent = abs(current_market_price - signal.entry) / current_market_price * 100
+            if price_diff_percent > 2.0:
+                logger.warning(f"Signal price too old: Signal={signal.entry}, Market={current_market_price}, Diff={price_diff_percent:.2f}%")
+                return False
+                
+            # Recalculate levels based on current market price if needed
+            if price_diff_percent > 0.5:
+                logger.info(f"Adjusting signal levels: Old={signal.entry}, New={current_market_price}")
+                # Update signal levels to current market price
+                signal.entry = current_market_price
+                # Recalculate SL and TP based on new entry
+                risk = abs(signal.entry - signal.sl)
+                if signal.direction == 'BUY':
+                    signal.sl = signal.entry - risk
+                    signal.tp1 = signal.entry + (risk * 1.2)
+                    signal.tp2 = signal.entry + (risk * 2.0)
+                else:
+                    signal.sl = signal.entry + risk
+                    signal.tp1 = signal.entry - (risk * 1.2)
+                    signal.tp2 = signal.entry - (risk * 2.0)
+                
             # Calculate adaptive position size
             position_size = self.calculate_adaptive_position_size(signal)
             if position_size <= 0:
@@ -512,12 +540,13 @@ class EnhancedICTTrader:
 
             self.daily_trades += 1
             
-            # Enhanced telegram notification
+            # Enhanced telegram notification with real-time price
             telegram.send_message(
                 f"🚀 *ENTRY EXECUTED*\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"🎯 Direction: {signal.direction}\n"
                 f"💰 Entry: ${signal.entry:.2f}\n"
+                f"📊 Market Price: ${current_market_price:.2f}\n"
                 f"🛑 SL: ${signal.sl:.2f}\n"
                 f"🎯 TP1: ${signal.tp1:.2f}\n"
                 f"🎯 TP2: ${signal.tp2:.2f}\n"
