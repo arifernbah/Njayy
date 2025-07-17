@@ -33,7 +33,7 @@ if not logger.handlers:
                 from integrations.telegram import telegram
                 log_entry = self.format(record)
                 if record.levelno >= logging.ERROR:
-                    telegram.send_message(f"🚨 *BOT ERROR*\n{log_entry}")
+                    telegram.send_message(f"🚨 BOT ERROR\n{log_entry}")
             except:
                 pass
 
