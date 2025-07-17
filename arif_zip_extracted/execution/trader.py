@@ -1,12 +1,12 @@
-from execution.Telegram import telegram
 from datetime import datetime, timedelta
 from utils.logger import logger
-from utils.config import config
+from core.config import config
 from binance.client import Client
 import time
 import threading
 from collections import defaultdict
 import statistics
+from integrations.telegram import telegram
 
 class EnhancedICTTrader:
     def __init__(self):

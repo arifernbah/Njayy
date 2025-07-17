@@ -5,7 +5,7 @@ from core.config import config
 from utils.logger import logger
 from integrations.telegram import telegram
 from strategies.ict_core import ICTStrategy
-from execution.trader import ICTTrader
+from execution.trader import EnhancedICTTrader
 from analysis.bias import BiasAnalyzer
 
 class ICTBot:
@@ -16,7 +16,7 @@ class ICTBot:
         
         # Components
         self.strategy = ICTStrategy()
-        self.trader = ICTTrader()
+        self.trader = EnhancedICTTrader()
         self.analyzer = BiasAnalyzer()
         
         # Performance Parameters
