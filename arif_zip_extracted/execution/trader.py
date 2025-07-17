@@ -131,7 +131,7 @@ class EnhancedICTTrader:
                     }
             if self.active_positions:
                 from integrations.telegram import telegram
-                telegram.send_message(f"♻️ Bot restart: {len(self.active_positions)} open position(s) with SL/TP restored and will be monitored.")
+                telegram.send_medium_priority(f"♻️ Bot restart: {len(self.active_positions)} open position(s) with SL/TP restored and will be monitored.", msg_type='Bot Restart')
         except Exception as e:
             from utils.logger import logger
             logger.error(f"Failed to restore open positions/orders on startup: {e}")
@@ -276,19 +276,23 @@ class EnhancedICTTrader:
 
     def _send_daily_summary(self):
         """Send daily performance summary"""
-        total_trades = self.performance['wins'] + self.performance['losses']
-        win_rate = (self.performance['wins'] / total_trades * 100) if total_trades > 0 else 0
-        
-        telegram.send_message(
-            f"📊 *DAILY SUMMARY*\n"
-            f"📈 Total Trades: {total_trades}\n"
-            f"✅ Wins: {self.performance['wins']}\n"
-            f"❌ Losses: {self.performance['losses']}\n"
-            f"🎯 Win Rate: {win_rate:.1f}%\n"
-            f"💰 Daily PnL: ${self.performance['daily_pnl']:.2f}\n"
-            f"📊 Market Volatility: {self.market_volatility:.2f}%\n"
-            f"🔄 Active Positions: {len(self.active_positions)}"
-        )
+        try:
+            performance = self.get_enhanced_performance()
+            
+            summary = {
+                'total_trades': performance.get('total_trades', 0),
+                'winners': performance.get('wins', 0),
+                'losers': performance.get('losses', 0),
+                'win_rate': performance.get('win_rate', 0),
+                'total_pnl': performance.get('total_pnl', 0),
+                'best_trade': max(performance.get('total_pnl', 0), 0),
+                'worst_trade': min(performance.get('total_pnl', 0), 0)
+            }
+            
+            telegram.send_daily_summary(summary)
+            
+        except Exception as e:
+            logger.error(f"Failed to send daily summary: {e}")
 
     def _rate_limit_check(self, endpoint):
         """Check API rate limits"""
@@ -321,51 +325,65 @@ class EnhancedICTTrader:
         return None
 
     def get_account_balance(self, symbol=None):
-        """Get USDT balance from futures account with retry"""
-        symbol = symbol or self.symbol
-        if not symbol:
-            logger.error("Symbol belum di-set pada EnhancedICTTrader!")
-            raise ValueError("Symbol belum di-set pada EnhancedICTTrader!")
+        """Get account balance with enhanced error handling"""
         try:
             if not self._rate_limit_check('balance'):
                 time.sleep(1)
                 
-            balances = self._execute_with_retry(self.client.futures_account_balance)
-            for b in balances:
-                if b['asset'] == 'USDT':
-                    balance = float(b['balance'])
-                    # Update max/min balance for drawdown tracking
-                    if balance > self.performance['max_balance']:
-                        self.performance['max_balance'] = balance
-                    if balance < self.performance['min_balance']:
-                        self.performance['min_balance'] = balance
-                    return balance
-            return 0.0
+            balance_info = self._execute_with_retry(
+                self.client.futures_account_balance,
+                max_retries=3,
+                delay=2
+            )
+            
+            if symbol:
+                # Get specific symbol balance
+                for balance in balance_info:
+                    if balance["asset"] == symbol:
+                        return float(balance["balance"])
+                return 0.0
+            else:
+                # Get USDT balance
+                for balance in balance_info:
+                    if balance["asset"] == "USDT":
+                        return float(balance["balance"])
+                return 0.0
+                
         except Exception as e:
-            import time as _time
-            now = _time.time()
-            if now - self._last_balance_error_time > 300:  # 5 menit
-                telegram.send_message(f"❌ Gagal cek saldo: {e}")
-                self._last_balance_error_time = now
+            telegram.send_critical(f"❌ Gagal cek saldo: {e}", msg_type='Balance Error')
             logger.error(f"Failed to get balance: {e}")
             return 0.0
 
     def check_circuit_breaker(self):
-        """Check if trading should be stopped due to risk limits"""
-        if self.daily_trades >= self.max_daily_trades:
-            logger.warning("Daily trade limit reached")
-            return False
+        """Check circuit breaker conditions"""
+        try:
+            # Check consecutive losses
+            if self.performance['consecutive_losses'] >= self.max_consecutive_losses:
+                telegram.send_critical(
+                    f"🛑 *CIRCUIT BREAKER ACTIVATED*\n"
+                    f"❌ Consecutive losses: {self.performance['consecutive_losses']}\n"
+                    f"🛡️ Max allowed: {self.max_consecutive_losses}\n"
+                    f"⏰ Bot paused for safety",
+                    msg_type='Circuit Breaker'
+                )
+                return False
             
-        if self.performance['consecutive_losses'] >= self.max_consecutive_losses:
-            logger.warning("Consecutive loss limit reached")
-            telegram.send_message(
-                f"🛑 *CIRCUIT BREAKER ACTIVATED*\n"
-                f"Consecutive losses: {self.performance['consecutive_losses']}\n"
-                f"Trading suspended for safety"
-            )
-            return False
+            # Check daily trade limit
+            if self.daily_trades >= self.max_daily_trades:
+                telegram.send_medium_priority(
+                    f"📊 *DAILY TRADE LIMIT REACHED*\n"
+                    f"🎯 Daily trades: {self.daily_trades}\n"
+                    f"📈 Max allowed: {self.max_daily_trades}\n"
+                    f"⏰ Waiting for reset",
+                    msg_type='Daily Limit'
+                )
+                return False
             
-        return True
+            return True
+            
+        except Exception as e:
+            logger.error(f"Circuit breaker check error: {e}")
+            return False
 
     def calculate_adaptive_position_size(self, signal, base_risk_percent=2):
         """Calculate position size with volatility adjustment"""
@@ -655,6 +673,15 @@ class EnhancedICTTrader:
                 logger.error("Failed to place entry order")
                 return False
 
+            # Check for high slippage
+            if entry_order and 'fills' in entry_order:
+                total_filled = sum(float(fill['qty']) for fill in entry_order['fills'])
+                if total_filled > 0:
+                    avg_price = sum(float(fill['qty']) * float(fill['price']) for fill in entry_order['fills']) / total_filled
+                    slippage = abs(avg_price - signal.entry) / signal.entry * 100
+                    if slippage > 0.5:  # 0.5% slippage threshold
+                        telegram.send_medium_priority(f"⚠️ High slippage: {slippage:.2f}% on {self.symbol} market order", msg_type='Slippage Warning')
+
             # 2. Place STOP_MARKET for SL
             sl_order = self.place_stop_market_order_enhanced(opposite_side, signal.sl, position_size)
             if not sl_order:
@@ -682,7 +709,7 @@ class EnhancedICTTrader:
             
             # Enhanced telegram notification with real-time price and WebSocket status
             ws_status = "✅ WebSocket" if self.ws_connected else "⚠️ REST API"
-            telegram.send_message(
+            telegram.send_high_priority(
                 f"🚀 *ENTRY EXECUTED*\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"🎯 Direction: {signal.direction}\n"
@@ -694,7 +721,8 @@ class EnhancedICTTrader:
                 f"🎯 TP2: ${signal.tp2:.2f}\n"
                 f"📊 Size: {position_size}\n"
                 f"💹 Market Vol: {self.market_volatility:.2f}%\n"
-                f"🔢 Daily Trades: {self.daily_trades}/{self.max_daily_trades}"
+                f"🔢 Daily Trades: {self.daily_trades}/{self.max_daily_trades}",
+                msg_type='Entry Executed'
             )
             
             return True
@@ -779,10 +807,11 @@ class EnhancedICTTrader:
         for pos_id, position in self.active_positions.items():
             if position['last_price_check'] < cutoff_time:
                 logger.warning(f"Position {pos_id} hasn't been updated recently")
-                telegram.send_message(
+                telegram.send_medium_priority(
                     f"⚠️ *POSITION ALERT*\n"
                     f"Position {pos_id} may be stuck\n"
-                    f"Last update: {position['last_price_check']}"
+                    f"Last update: {position['last_price_check']}",
+                    msg_type='Stuck Position'
                 )
 
     def get_current_price_enhanced(self, symbol):
@@ -985,13 +1014,14 @@ class EnhancedICTTrader:
                 # Send enhanced notification
                 if not position['notifications']['sl_be_notified']:
                     profit_pnl = self._calculate_position_pnl(position)
-                    telegram.send_message(
+                    telegram.send_high_priority(
                         f"📈 *SL MOVED TO BREAKEVEN*\n"
                         f"📌 PAIR: {self.symbol}\n"
                         f"🛡️ Risk eliminated - SL at: ${new_sl_price:.4f}\n"
                         f"💰 Current PnL: ${profit_pnl:.2f}\n"
                         f"💹 Market Price: ${current_price:.4f}\n"
-                        f"⏰ Time in trade: {((datetime.utcnow() - position['opened_at']).total_seconds() / 3600):.1f}h"
+                        f"⏰ Time in trade: {((datetime.utcnow() - position['opened_at']).total_seconds() / 3600):.1f}h",
+                        msg_type='SL Breakeven'
                     )
                     position['notifications']['sl_be_notified'] = True
                 
@@ -1011,12 +1041,13 @@ class EnhancedICTTrader:
         self.activate_trailing_stop_enhanced(position)
         
         if not position['notifications']['tp1_notified']:
-            telegram.send_message(
+            telegram.send_high_priority(
                 f"🎯 *TP1 HIT!*\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"💰 70% position closed at ${position['tp1']:.2f}\n"
                 f"🔄 Trailing stop activated for remaining 30%\n"
-                f"📊 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}"
+                f"📊 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}",
+                msg_type='TP1 Hit'
             )
             position['notifications']['tp1_notified'] = True
 
@@ -1026,12 +1057,13 @@ class EnhancedICTTrader:
         
         if not position['notifications']['tp2_notified']:
             pnl = self._calculate_position_pnl(position)
-            telegram.send_message(
+            telegram.send_high_priority(
                 f"🎯 *TP2 HIT!*\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"💰 Full position closed at ${position['tp2']:.2f}\n"
                 f"🏆 Maximum profit achieved!\n"
-                f"📈 Estimated PnL: ${pnl:.2f}"
+                f"📈 Estimated PnL: ${pnl:.2f}",
+                msg_type='TP2 Hit'
             )
             position['notifications']['tp2_notified'] = True
             
@@ -1047,12 +1079,13 @@ class EnhancedICTTrader:
         """Handle SL hit event"""
         pnl = self._calculate_position_pnl(position)
         
-        telegram.send_message(
+        telegram.send_critical(
             f"🛑 *STOP LOSS HIT!*\n"
             f"📌 PAIR: {self.symbol}\n"
             f"⚠️ Position closed at ${position['sl']:.2f}\n"
             f"🛡️ Capital protected\n"
-            f"📉 Estimated PnL: ${pnl:.2f}"
+            f"📉 Estimated PnL: ${pnl:.2f}",
+            msg_type='SL Hit'
         )
         position['notifications']['sl_notified'] = True
         
@@ -1118,12 +1151,13 @@ class EnhancedICTTrader:
                 
                 # Send notification
                 if not position['notifications']['trailing_notified']:
-                    telegram.send_message(
+                    telegram.send_medium_priority(
                         f"🔄 *TRAILING STOP ACTIVATED*\n"
                         f"📌 PAIR: {self.symbol}\n"
                         f"📊 Remaining size: {remaining_size}\n"
                         f"🎯 Callback rate: {callback_rate:.1f}%\n"
-                        f"💹 Market volatility: {self.market_volatility:.2f}%"
+                        f"💹 Market volatility: {self.market_volatility:.2f}%",
+                        msg_type='Trailing Stop'
                     )
                     position['notifications']['trailing_notified'] = True
                     
@@ -1159,11 +1193,12 @@ class EnhancedICTTrader:
             self.cancel_all_orders(position)
             
         # Send final summary
-        telegram.send_message(
+        telegram.send_medium_priority(
             f"🔄 *BOT SHUTDOWN*\n"
             f"Final Statistics:\n"
             f"📊 Performance: {self.get_enhanced_performance()}\n"
-            f"⏰ Shutdown time: {datetime.utcnow()}"
+            f"⏰ Shutdown time: {datetime.utcnow()}",
+            msg_type='Bot Shutdown'
         )
         
         logger.info("Enhanced ICT Trader shutdown complete")

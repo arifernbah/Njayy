@@ -42,8 +42,8 @@ class ICTBot:
                 
         except Exception as e:
             logger.error(f"Bot error: {e}")
-            if config.ENABLE_TELEGRAM:
-                telegram.send_message(f"⚠️ Bot Error: {e}")
+            telegram.send_critical(f"⚠️ Bot Error: {e}", msg_type='Bot Error')
+            time.sleep(10)
 
     def main_loop(self):
         """Main bot loop"""
@@ -237,40 +237,65 @@ class ICTBot:
         except Exception as e:
             logger.error(f"Status update error: {e}")
 
+    def handle_command(self, message):
+        """Handle incoming Telegram commands"""
+        try:
+            text = message.get('text', '').strip()
+            if not text.startswith('/'):
+                return
+            
+            command = text.split()[0].lower()
+            
+            if command == '/status':
+                telegram.send_medium_priority("✅ Bot status: Aktif dan berjalan", msg_type='Status Check')
+                
+            elif command == '/balance':
+                balance = self.trader.get_account_balance()
+                telegram.send_medium_priority(f"💰 Saldo USDT saat ini: {balance}", msg_type='Balance Check')
+                
+            elif command == '/drawdown':
+                drawdown = self.trader.get_drawdown()
+                telegram.send_medium_priority(f"📉 Drawdown saat ini: {drawdown:.2f}%", msg_type='Drawdown Check')
+                
+            elif command == '/help':
+                telegram.send_low_priority("""
+🤖 *ICT Bot Commands*
+
+/status - Check bot status
+/balance - Get current balance
+/drawdown - Get current drawdown
+/help - Show this help
+/shutdown - Shutdown bot
+
+📊 *Bot Features*
+- Multi-timeframe ICT analysis
+- Real-time price monitoring
+- Adaptive position sizing
+- Enhanced SL/TP management
+                """, msg_type='Help')
+                
+            elif command == '/shutdown':
+                telegram.send_critical("🛑 Bot akan dimatikan...", msg_type='Shutdown Command')
+                self.running = False
+                
+            else:
+                telegram.send_low_priority(f"⚠️ Perintah tidak dikenali: {text}", msg_type='Unknown Command')
+                
+        except Exception as e:
+            logger.error(f"Command handler error: {e}")
+            telegram.send_critical(f"❌ Command error: {e}", msg_type='Command Error')
+
 if __name__ == "__main__":
     def telegram_message_handler(msg):
-        text = msg.get('text', '').strip().lower()
-        chat_id = msg.get('chat', {}).get('id')
-        # Only respond to the configured chat_id
-        if str(chat_id) != str(config.TELEGRAM_CHAT_ID):
-            telegram.send_message("⚠️ Unauthorized access.")
-            return
-        if text == "/status":
-            telegram.send_message("✅ Bot status: Aktif dan berjalan")
-        elif text == "/balance":
-            trader = EnhancedICTTrader()
-            balance = trader.get_account_balance()
-            telegram.send_message(f"💰 Saldo USDT saat ini: {balance}")
-        elif text == "/drawdown":
-            trader = EnhancedICTTrader()
-            drawdown = trader.get_drawdown()
-            telegram.send_message(f"📉 Drawdown saat ini: {drawdown:.2f}%")
-        elif text == "/help":
-            telegram.send_message("""
-📖 Daftar Perintah:
-/status - Cek status bot
-/balance - Cek saldo USDT
-/drawdown - Cek drawdown saat ini
-/help - Lihat daftar command
-
-Perintah lanjutan dapat ditambahkan nanti seperti /summary, /pause, dll.
-""")
-        elif text == "/shutdown":
-            telegram.send_message("🛑 Bot akan dimatikan...")
-            exit(0)
-        else:
-            telegram.send_message(f"⚠️ Perintah tidak dikenali: {text}")
-
-    telegram.start_polling(handler=telegram_message_handler)
+        try:
+            bot_instance.handle_command(msg)
+        except Exception as e:
+            logger.error(f"Message handler error: {e}")
+    
+    # Set up Telegram message handler
+    telegram.set_message_handler(telegram_message_handler)
+    telegram.start_polling()
+    
+    # Create and run bot
     bot = ICTBot()
     bot.start()
