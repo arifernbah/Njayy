@@ -3,6 +3,7 @@ import json
 from datetime import datetime
 from core.config import config
 from utils.logger import logger
+import time
 
 class TelegramBot:
     def __init__(self):
@@ -32,33 +33,30 @@ class TelegramBot:
             return False
     
     def send_message(self, message, parse_mode="Markdown"):
-        """Send message to Telegram"""
-        try:
-            if not config.ENABLE_TELEGRAM:
-                logger.info(f"Telegram disabled. Message: {message}")
-                return True
-            
-            url = f"{self.base_url}/sendMessage"
-            
-            payload = {
-                'chat_id': self.chat_id,
-                'text': message,
-                'parse_mode': parse_mode
-            }
-            
-            response = requests.post(url, json=payload, timeout=10)
-            
-            if response.status_code == 200:
-                logger.info("Telegram message sent successfully")
-                return True
-            else:
-                error_msg = response.json().get('description', 'Unknown error')
-                logger.error(f"Telegram send failed: {error_msg}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Telegram send error: {e}")
-            return False
+        """Send message to Telegram with retry"""
+        for attempt in range(3):
+            try:
+                if not config.ENABLE_TELEGRAM:
+                    logger.info(f"Telegram disabled. Message: {message}")
+                    return True
+                url = f"{self.base_url}/sendMessage"
+                payload = {
+                    'chat_id': self.chat_id,
+                    'text': message,
+                    'parse_mode': parse_mode
+                }
+                response = requests.post(url, json=payload, timeout=10)
+                if response.status_code == 200:
+                    logger.info("Telegram message sent successfully")
+                    return True
+                else:
+                    error_msg = response.json().get('description', 'Unknown error')
+                    logger.error(f"Telegram send failed (attempt {attempt+1}): {error_msg}")
+            except Exception as e:
+                logger.error(f"Telegram send error (attempt {attempt+1}): {e}")
+            time.sleep(2)
+        logger.error(f"Telegram send failed after 3 attempts: {message}")
+        return False
     
     def send_trade_alert(self, signal, bias, risk, position_size):
         """Send formatted trade alert"""
