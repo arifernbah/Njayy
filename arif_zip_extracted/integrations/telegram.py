@@ -4,12 +4,17 @@ from datetime import datetime
 from core.config import config
 from utils.logger import logger
 import time
+import threading
 
 class TelegramBot:
     def __init__(self):
         self.token = config.TELEGRAM_TOKEN
         self.chat_id = config.TELEGRAM_CHAT_ID
         self.base_url = f"https://api.telegram.org/bot{self.token}"
+        self._polling_active = False
+        self._polling_thread = None
+        self._last_update_id = None
+        self.message_handler = None  # User can set this to a function
         
         # Test connection on init
         self.test_connection()
@@ -177,6 +182,62 @@ class TelegramBot:
         """
         
         return self.send_message(message)
+
+    def poll_messages(self, timeout=30):
+        """Poll for new messages using getUpdates"""
+        url = f"{self.base_url}/getUpdates"
+        params = {'timeout': timeout}
+        if self._last_update_id:
+            params['offset'] = self._last_update_id + 1
+        try:
+            response = requests.get(url, params=params, timeout=timeout+5)
+            if response.status_code == 200:
+                updates = response.json()['result']
+                return updates
+            else:
+                logger.error(f"Polling failed: {response.text}")
+                return []
+        except Exception as e:
+            logger.error(f"Polling error: {e}")
+            return []
+
+    def start_polling(self, handler=None, interval=2):
+        """Start background polling for incoming messages"""
+        if self._polling_active:
+            logger.info("Polling already active.")
+            return
+        self._polling_active = True
+        if handler:
+            self.message_handler = handler
+        self._polling_thread = threading.Thread(target=self._polling_loop, args=(interval,), daemon=True)
+        self._polling_thread.start()
+        logger.info("Started Telegram polling thread.")
+
+    def stop_polling(self):
+        self._polling_active = False
+        if self._polling_thread:
+            self._polling_thread.join(timeout=2)
+            logger.info("Stopped Telegram polling thread.")
+
+    def _polling_loop(self, interval):
+        while self._polling_active:
+            updates = self.poll_messages()
+            for update in updates:
+                self._last_update_id = update['update_id']
+                if 'message' in update:
+                    msg = update['message']
+                    if self.message_handler:
+                        try:
+                            self.message_handler(msg)
+                        except Exception as e:
+                            logger.error(f"Message handler error: {e}")
+                    else:
+                        logger.info(f"Received message: {msg}")
+            time.sleep(interval)
+
+    def set_message_handler(self, handler):
+        """Set a custom handler for incoming messages"""
+        self.message_handler = handler
 
 # Create global telegram instance
 telegram = TelegramBot()
