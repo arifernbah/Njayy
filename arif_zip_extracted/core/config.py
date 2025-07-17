@@ -89,6 +89,10 @@ class Config:
         self.HTF2 = os.getenv('HTF2', '4H')
         self.ENTRY_TF = os.getenv('ENTRY_TF', '15M')
         
+        # Retry config for Binance API
+        self.BINANCE_MAX_RETRIES = int(os.getenv('BINANCE_MAX_RETRIES', 5))
+        self.BINANCE_RETRY_DELAY = float(os.getenv('BINANCE_RETRY_DELAY', 2.0))
+        
         # Validate critical settings
         self._validate_config()
     

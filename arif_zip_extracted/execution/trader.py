@@ -218,17 +218,24 @@ class EnhancedICTTrader:
             return False
         return True
 
-    def _execute_with_retry(self, func, *args, max_retries=3, delay=1):
-        """Execute function with retry mechanism"""
+    def _execute_with_retry(self, func, *args, max_retries=None, delay=None):
+        from core.config import config
+        max_retries = max_retries or config.BINANCE_MAX_RETRIES
+        delay = delay or config.BINANCE_RETRY_DELAY
         for attempt in range(max_retries):
             try:
                 return func(*args)
             except Exception as e:
-                if attempt == max_retries - 1:
-                    logger.error(f"Function {func.__name__} failed after {max_retries} attempts: {e}")
-                    raise e
-                logger.warning(f"Retry {attempt + 1}/{max_retries} for {func.__name__}: {e}")
-                time.sleep(delay * (attempt + 1))
+                # Cek jika error karena rate limit (HTTP 429)
+                if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 429:
+                    logger.warning(f"Rate limit hit (429) on {func.__name__}, attempt {attempt+1}")
+                    time.sleep(delay * (2 ** attempt))
+                else:
+                    logger.warning(f"Retry {attempt + 1}/{max_retries} for {func.__name__}: {e}")
+                    time.sleep(delay * (2 ** attempt))
+        logger.error(f"Function {func.__name__} failed after {max_retries} attempts.")
+        # (Opsional) telegram.send_message(f"Binance API error berulang pada {func.__name__}")
+        return None
 
     def get_account_balance(self):
         """Get USDT balance from futures account with retry"""
