@@ -8,6 +8,9 @@ from collections import defaultdict
 import statistics
 from integrations.telegram import telegram
 import decimal
+import websocket
+import json
+import time
 
 class EnhancedICTTrader:
     def __init__(self):
@@ -38,6 +41,15 @@ class EnhancedICTTrader:
         # Rate limiting
         self.api_call_times = defaultdict(list)
         self.max_calls_per_minute = 50
+        
+        # WebSocket real-time price data
+        self.ws_prices = {}  # Store real-time prices
+        self.ws_connected = False
+        self.ws_thread = None
+        self.ws_url = "wss://fstream.binance.com/ws/"
+        
+        # Start WebSocket connection
+        self.start_websocket()
         
         # Start monitoring thread
         self.monitoring_active = True
@@ -123,6 +135,76 @@ class EnhancedICTTrader:
         except Exception as e:
             from utils.logger import logger
             logger.error(f"Failed to restore open positions/orders on startup: {e}")
+
+    def start_websocket(self):
+        """Start WebSocket connection for real-time price data"""
+        try:
+            # Subscribe to all trading pairs
+            streams = [f"{pair.lower()}@ticker" for pair in config.TRADING_PAIRS]
+            ws_url = self.ws_url + "/".join(streams)
+            
+            def on_message(ws, message):
+                try:
+                    data = json.loads(message)
+                    if 's' in data and 'c' in data:  # Symbol and close price
+                        symbol = data['s']
+                        price = float(data['c'])
+                        self.ws_prices[symbol] = {
+                            'price': price,
+                            'timestamp': datetime.utcnow()
+                        }
+                except Exception as e:
+                    logger.error(f"WebSocket message error: {e}")
+            
+            def on_error(ws, error):
+                logger.error(f"WebSocket error: {error}")
+                self.ws_connected = False
+            
+            def on_close(ws, close_status_code, close_msg):
+                logger.warning("WebSocket connection closed")
+                self.ws_connected = False
+                # Reconnect after 5 seconds
+                time.sleep(5)
+                self.start_websocket()
+            
+            def on_open(ws):
+                logger.info("WebSocket connection established")
+                self.ws_connected = True
+            
+            # Create WebSocket connection
+            self.ws = websocket.WebSocketApp(
+                ws_url,
+                on_message=on_message,
+                on_error=on_error,
+                on_close=on_close,
+                on_open=on_open
+            )
+            
+            # Start WebSocket in separate thread
+            self.ws_thread = threading.Thread(target=self.ws.run_forever)
+            self.ws_thread.daemon = True
+            self.ws_thread.start()
+            
+        except Exception as e:
+            logger.error(f"Failed to start WebSocket: {e}")
+            self.ws_connected = False
+
+    def get_realtime_price(self, symbol):
+        """Get real-time price from WebSocket, fallback to REST API"""
+        try:
+            # Try WebSocket first
+            if self.ws_connected and symbol in self.ws_prices:
+                price_data = self.ws_prices[symbol]
+                # Check if price is fresh (less than 5 seconds old)
+                if (datetime.utcnow() - price_data['timestamp']).total_seconds() < 5:
+                    return price_data['price']
+            
+            # Fallback to REST API
+            return self.get_current_price_enhanced(symbol)
+            
+        except Exception as e:
+            logger.error(f"Failed to get real-time price: {e}")
+            return self.get_current_price_enhanced(symbol)
 
     def _monitoring_loop(self):
         """Background monitoring for health checks and maintenance"""
@@ -494,8 +576,8 @@ class EnhancedICTTrader:
             if not self.check_circuit_breaker():
                 return False
                 
-            # REAL-TIME PRICE VALIDATION
-            current_market_price = self.get_current_price_enhanced(self.symbol)
+            # REAL-TIME PRICE VALIDATION (WebSocket priority)
+            current_market_price = self.get_realtime_price(self.symbol)
             if current_market_price <= 0:
                 logger.error("Failed to get current market price")
                 return False
@@ -566,13 +648,15 @@ class EnhancedICTTrader:
 
             self.daily_trades += 1
             
-            # Enhanced telegram notification with real-time price
+            # Enhanced telegram notification with real-time price and WebSocket status
+            ws_status = "✅ WebSocket" if self.ws_connected else "⚠️ REST API"
             telegram.send_message(
                 f"🚀 *ENTRY EXECUTED*\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"🎯 Direction: {signal.direction}\n"
                 f"💰 Entry: ${signal.entry:.2f}\n"
                 f"📊 Market Price: ${current_market_price:.2f}\n"
+                f"🔗 Data Source: {ws_status}\n"
                 f"🛑 SL: ${signal.sl:.2f}\n"
                 f"🎯 TP1: ${signal.tp1:.2f}\n"
                 f"🎯 TP2: ${signal.tp2:.2f}\n"
@@ -651,8 +735,14 @@ class EnhancedICTTrader:
                 )
 
     def get_current_price_enhanced(self, symbol):
-        """Enhanced price fetching with fallback and caching"""
+        """Enhanced price fetching with WebSocket priority and fallback"""
         try:
+            # Try WebSocket first (real-time)
+            realtime_price = self.get_realtime_price(symbol)
+            if realtime_price > 0:
+                return realtime_price
+            
+            # Fallback to REST API
             if not self._rate_limit_check('price_check'):
                 time.sleep(0.5)
                 
