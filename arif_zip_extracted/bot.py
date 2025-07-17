@@ -90,13 +90,12 @@ class ICTBot:
     def validate_signal(self, signal):
         """Validate signal against filters (pro ICT style)"""
         try:
-            # Killzone WIB: Asia 08:00-10:00, London 14:00-17:00, NY 19:00-22:00
+            # Killzone WIB diperpanjang: 08:00-18:00 (Asia+London panjang), NY tetap 19:00-22:00
             from datetime import datetime, timedelta
             utc_now = datetime.utcnow() + timedelta(hours=7)  # WIB
             hour = utc_now.hour
             in_killzone = (
-                (8 <= hour < 10) or   # Asia
-                (14 <= hour < 17) or # London
+                (8 <= hour < 18) or   # Asia+London panjang
                 (19 <= hour < 22)    # New York
             )
             if not in_killzone:
