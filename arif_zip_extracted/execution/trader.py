@@ -261,6 +261,11 @@ class EnhancedICTTrader:
                     return balance
             return 0.0
         except Exception as e:
+            import time as _time
+            now = _time.time()
+            if now - self._last_balance_error_time > 300:  # 5 menit
+                telegram.send_message(f"❌ Gagal cek saldo: {e}")
+                self._last_balance_error_time = now
             logger.error(f"Failed to get balance: {e}")
             return 0.0
 
