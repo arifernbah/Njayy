@@ -196,5 +196,39 @@ class ICTBot:
             logger.error(f"Status update error: {e}")
 
 if __name__ == "__main__":
+    def telegram_message_handler(msg):
+        text = msg.get('text', '').strip().lower()
+        chat_id = msg.get('chat', {}).get('id')
+        # Only respond to the configured chat_id
+        if str(chat_id) != str(config.TELEGRAM_CHAT_ID):
+            telegram.send_message("⚠️ Unauthorized access.")
+            return
+        if text == "/status":
+            telegram.send_message("✅ Bot status: Aktif dan berjalan")
+        elif text == "/balance":
+            trader = EnhancedICTTrader()
+            balance = trader.get_account_balance()
+            telegram.send_message(f"💰 Saldo USDT saat ini: {balance}")
+        elif text == "/drawdown":
+            trader = EnhancedICTTrader()
+            drawdown = trader.get_drawdown()
+            telegram.send_message(f"📉 Drawdown saat ini: {drawdown:.2f}%")
+        elif text == "/help":
+            telegram.send_message("""
+📖 Daftar Perintah:
+/status - Cek status bot
+/balance - Cek saldo USDT
+/drawdown - Cek drawdown saat ini
+/help - Lihat daftar command
+
+Perintah lanjutan dapat ditambahkan nanti seperti /summary, /pause, dll.
+""")
+        elif text == "/shutdown":
+            telegram.send_message("🛑 Bot akan dimatikan...")
+            exit(0)
+        else:
+            telegram.send_message(f"⚠️ Perintah tidak dikenali: {text}")
+
+    telegram.start_polling(handler=telegram_message_handler)
     bot = ICTBot()
     bot.start()
