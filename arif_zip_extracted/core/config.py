@@ -1,5 +1,6 @@
 import os
 from dotenv import load_dotenv
+import requests
 
 class Config:
     def __init__(self):
@@ -13,13 +14,34 @@ class Config:
         self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
         self.TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
         
-        # ✅ Trading Pairs - Added missing configuration
+        # Bluechip/major coin list (bukan shitcoin)
+        self.BLUECHIP_BASE_ASSETS = [
+            'BTC','ETH','BNB','SOL','ADA','XRP','DOGE','LINK','AVAX','MATIC','DOT','LTC','TRX','OP','ARB','BCH','UNI','ETC','FIL','APT','ATOM','NEAR','XLM','SUI','INJ','RNDR','PEPE','TIA','SEI','JTO','WIF','STX','DYDX','BLUR','APE','GRT','AAVE','SNX','SAND','MKR','RUNE','LDO','IMX','FTM','FLOW','GMT','COMP','CRV','ALGO','EOS','CRO','XTZ','ZIL','ENJ','KAVA','1INCH','BAND','BAT','CHZ','CVC','DASH','DGB','ICX','IOST','KNC','MANA','NKN','OCEAN','ONT','QTUM','SC','SKL','SRM','STMX','STPT','SXP','TOMO','VET','VTHO','WAVES','XEM','XMR','ZEC','ZEN','ZRX'
+        ]
+        
+        # ✅ Trading Pairs - default fallback
         self.TRADING_PAIRS = os.getenv('TRADING_PAIRS', 'BTCUSDT,ETHUSDT,ADAUSDT,BNBUSDT,SOLUSDT,XRPUSDT').split(',')
         
         # ✅ Top Volume Configuration (hardcoded, no .env needed)
         self.USE_TOP_VOLUME_PAIRS = True  # Set to True to use top volume pairs
         self.TOP_VOLUME_COUNT = 10        # Number of top volume pairs to use
         self.VOLUME_TIMEFRAME = '24h'     # Volume timeframe (24h, 1h, etc.)
+        
+        if self.USE_TOP_VOLUME_PAIRS:
+            try:
+                url = 'https://fapi.binance.com/fapi/v1/ticker/24hr'
+                resp = requests.get(url, timeout=10)
+                data = resp.json()
+                # Filter USDT pairs only
+                usdt_pairs = [d for d in data if d['symbol'].endswith('USDT')]
+                # Filter bluechip/major only
+                bluechip_pairs = [d for d in usdt_pairs if d['symbol'][:-4] in self.BLUECHIP_BASE_ASSETS]
+                # Sort by quoteVolume (USDT volume) descending
+                bluechip_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
+                # Ambil 10 teratas
+                self.TRADING_PAIRS = [d['symbol'] for d in bluechip_pairs[:self.TOP_VOLUME_COUNT]]
+            except Exception as e:
+                print(f"[Config] Gagal fetch top volume pairs: {e}")
         
         # Trading Parameters
         self.MAX_DAILY_TRADES = int(os.getenv('MAX_DAILY_TRADES', 6))
