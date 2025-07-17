@@ -32,8 +32,8 @@ class TelegramBot:
             logger.error(f"Telegram connection error: {e}")
             return False
     
-    def send_message(self, message, parse_mode="Markdown"):
-        """Send message to Telegram with retry"""
+    def send_message(self, message, parse_mode=None):
+        """Send message to Telegram with retry, no formatting (plain text)"""
         for attempt in range(3):
             try:
                 if not config.ENABLE_TELEGRAM:
@@ -42,8 +42,7 @@ class TelegramBot:
                 url = f"{self.base_url}/sendMessage"
                 payload = {
                     'chat_id': self.chat_id,
-                    'text': message,
-                    'parse_mode': parse_mode
+                    'text': message
                 }
                 response = requests.post(url, json=payload, timeout=10)
                 if response.status_code == 200:

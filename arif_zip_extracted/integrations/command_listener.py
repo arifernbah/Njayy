@@ -42,37 +42,37 @@ class TelegramCommandListener:
         #     return
 
         if message == "/status":
-            telegram.send_message("✅ *Bot status*: Aktif dan berjalan", parse_mode="Markdown")
+            telegram.send_message("✅ Bot status: Aktif dan berjalan")
 
         elif message == "/balance":
             from execution.trader import EnhancedICTTrader
             trader = EnhancedICTTrader()
             balance = trader.get_account_balance()
-            telegram.send_message(f"💰 *Saldo USDT saat ini*: {balance}", parse_mode="Markdown")
+            telegram.send_message(f"💰 Saldo USDT saat ini: {balance}")
 
         elif message == "/drawdown":
             from execution.trader import EnhancedICTTrader
             trader = EnhancedICTTrader()
             drawdown = trader.get_drawdown()
-            telegram.send_message(f"📉 *Drawdown saat ini*: {drawdown:.2f}%", parse_mode="Markdown")
+            telegram.send_message(f"📉 Drawdown saat ini: {drawdown:.2f}%")
 
         elif message == "/help":
             telegram.send_message("""
-📖 *Daftar Perintah:*
+📖 Daftar Perintah:
 /status - Cek status bot
 /balance - Cek saldo USDT
 /drawdown - Cek drawdown saat ini
 /help - Lihat daftar command
 
 Perintah lanjutan dapat ditambahkan nanti seperti /summary, /pause, dll.
-""", parse_mode="Markdown")
+""")
 
         elif message == "/shutdown":
-            telegram.send_message("🛑 *Bot akan dimatikan...*", parse_mode="Markdown")
+            telegram.send_message("🛑 Bot akan dimatikan...")
             exit(0)
 
         else:
-            telegram.send_message(f"⚠️ *Perintah tidak dikenali:* {message}", parse_mode="Markdown")
+            telegram.send_message(f"⚠️ Perintah tidak dikenali: {message}")
 
 
 import threading
