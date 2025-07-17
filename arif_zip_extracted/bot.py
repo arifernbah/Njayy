@@ -70,7 +70,7 @@ class ICTBot:
                             self.execute_signal(signal, bias)
                 
                 # Manage positions
-                self.trader.manage_positions()
+                self.trader.manage_positions_enhanced()
             
             # Update status
             self.update_status()
@@ -108,7 +108,7 @@ class ICTBot:
             position_size = self.trader.calculate_position_size(signal, risk)
             
             # Execute trade
-            success = self.trader.execute_entry(signal, position_size)
+            success = self.trader.execute_entry_enhanced(signal)
             
             if success and config.ENABLE_TELEGRAM:
                 # Send signal notification
