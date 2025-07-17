@@ -417,33 +417,46 @@ class EnhancedICTTrader:
             return None
 
     def place_limit_order_enhanced(self, side, price, quantity):
-        """Enhanced limit order with validation"""
+        """Enhanced limit order with validation and pro error handling"""
         try:
             if not self._rate_limit_check('limit_order'):
                 time.sleep(1)
-                
             # Validate parameters
             if quantity <= 0 or price <= 0:
                 logger.error("Invalid parameters for limit order")
                 return None
-                
             precision = self.get_quantity_precision(self.symbol)
             quantity = round(quantity, precision)
-
+            # Tick size validation
+            info = self.client.futures_exchange_info()
+            tick_size = 0.01
+            for s in info['symbols']:
+                if s['symbol'] == self.symbol:
+                    for f in s['filters']:
+                        if f['filterType'] == 'PRICE_FILTER':
+                            tick_size = float(f['tickSize'])
+            price = round(round(price / tick_size) * tick_size, 8)
+            # Cek deviasi harga limit dari harga pasar
+            current_price = self.get_current_price_enhanced(self.symbol)
+            max_deviation = 0.01  # 1% dari harga pasar
+            if abs(price - current_price) / current_price > max_deviation:
+                logger.error(f"Limit price terlalu jauh dari harga pasar: {price} vs {current_price}")
+                return None
             order = self._execute_with_retry(
                 self.client.futures_create_order,
                 symbol=self.symbol,
                 side=side,
                 type='LIMIT',
-                price=round(price, 2),
+                price=price,
                 quantity=quantity,
                 timeInForce='GTC'
             )
-            
+            if not order:
+                logger.error("Limit order gagal, tidak ada response dari Binance.")
+                return None
             self.order_cache[order['orderId']] = order
             logger.info(f"Limit order placed: {order}")
             return order
-            
         except Exception as e:
             logger.error(f"Limit order error: {e}")
             return None
