@@ -163,18 +163,25 @@ class ICTBot:
         """Send startup message to Telegram"""
         if not config.ENABLE_TELEGRAM:
             return
-            
         try:
+            from datetime import timedelta
+            utc_now = datetime.utcnow()
+            wib_now = utc_now + timedelta(hours=7)
+            pairs = self.trading_pairs
+            if len(pairs) > 5:
+                pairs_str = ', '.join(pairs[:5]) + '\n  ' + ', '.join(pairs[5:])
+            else:
+                pairs_str = ', '.join(pairs)
             msg = (
-                f"🚀 ICT Bot v8.1 Started\n"
-                f"👨‍💻 Author: {self.author}\n"
-                f"🕒 Started: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC\n"
-                f"📊 Settings:\n"
-                f"- Pairs: {', '.join(self.trading_pairs)}\n"
-                f"- Signals: {self.signal_target}\n"
+                f"🚀 ICT Bot v8.1 Siap Beraksi!\n\n"
+                f"Author: {self.author}\n"
+                f"Start: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB\n\n"
+                f"Pengaturan Bot:\n"
+                f"- Pairs: {pairs_str}\n"
+                f"- Target Sinyal: {self.signal_target} per hari\n"
                 f"- Min Score: {self.filters['signal_strength']}\n"
-                f"- Risk: {self.risk_management['default_risk']*100}%\n"
-                f"Bot is running..."
+                f"- Risk per Trade: {self.risk_management['default_risk']*100}%\n\n"
+                f"Status: Bot aktif & siap trading!"
             )
             telegram.send_message(msg)
         except Exception as e:
