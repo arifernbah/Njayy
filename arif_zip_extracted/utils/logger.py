@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime
 import os
+import time
 
 # Buat folder log jika belum ada
 os.makedirs("logs", exist_ok=True)
@@ -27,13 +28,25 @@ if not logger.handlers:
     logger.addHandler(ch)
 
     # ✅ Telegram handler jika level ERROR
+    _last_telegram_error = {}
+
+    def send_telegram_error(message, error_type="general", cooldown=300):
+        global _last_telegram_error
+        now = time.time()
+        if error_type not in _last_telegram_error or now - _last_telegram_error[error_type] > cooldown:
+            from integrations.telegram import telegram
+            telegram.send_message(message)
+            _last_telegram_error[error_type] = now
+        # else: hanya log ke file, tidak kirim ke Telegram
+
     class TelegramLogHandler(logging.Handler):
         def emit(self, record):
             try:
                 from integrations.telegram import telegram
                 log_entry = self.format(record)
                 if record.levelno >= logging.ERROR:
-                    telegram.send_message(f"🚨 BOT ERROR\n{log_entry}")
+                    # Gunakan anti-spam error
+                    send_telegram_error(f"🚨 BOT ERROR\n{log_entry}", error_type=record.levelname, cooldown=300)
             except:
                 pass
 
