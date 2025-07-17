@@ -851,34 +851,4 @@ class EnhancedICTTrader:
         except Exception as e:
             logger.error(f"Gagal cek margin: {e}")
             return False
-
-    def get_win_rate(self, max_trades=100):
-        recent = self.trade_history[-max_trades:] if len(self.trade_history) > max_trades else self.trade_history
-        wins = sum(1 for t in recent if t.get("result") == "win")
-        total = len(recent)
-        if total == 0:
-            return 0
-        return round((wins / total) * 100, 1)
-
-    def get_drawdown(self):
-        """Return drawdown percentage from max_balance to min_balance"""
-        max_balance = self.performance.get('max_balance', 0)
-        min_balance = self.performance.get('min_balance', 0)
-        if max_balance == 0 or min_balance == float('inf'):
-            return 0.0
-        return ((max_balance - min_balance) / max_balance) * 100
-    
-    def get_consecutive_losses(self):
-        return self.performance.get('consecutive_losses', 0)
-
-    def calculate_position_size(self, signal, risk):
-        # risk: desimal, misal 0.02 untuk 2%
-        balance = self.get_account_balance()
-        risk_amount = balance * risk
-        risk_per_unit = abs(signal.entry - signal.sl)
-        if risk_per_unit <= 0:
-            logger.error("Invalid risk calculation - SL too close to entry")
-            return 0
-        position_size = risk_amount / risk_per_unit
-        return round(position_size, 4)
     
