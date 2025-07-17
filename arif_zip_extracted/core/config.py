@@ -45,7 +45,7 @@ class Config:
         
         # Trading Parameters
         self.MAX_DAILY_TRADES = int(os.getenv('MAX_DAILY_TRADES', 7))
-        self.MAX_DRAWDOWN = float(os.getenv('MAX_DRAWDOWN', 15.0))
+        self.MAX_DRAWDOWN = float(os.getenv('MAX_DRAWDOWN', 10.0))
         self.DEFAULT_RISK = float(os.getenv('DEFAULT_RISK', 0.01))
         
         # Additional Trading Settings
