@@ -354,7 +354,7 @@ class EnhancedICTTrader:
         return 3  # default jika tidak ketemu
 
     def place_market_order_enhanced(self, side, quantity):
-        """Enhanced market order with validation"""
+        """Enhanced market order with validation and priority execution"""
         try:
             if not self._rate_limit_check('market_order'):
                 time.sleep(1)
@@ -366,18 +366,44 @@ class EnhancedICTTrader:
                 
             precision = self.get_quantity_precision(self.symbol)
             quantity = round(quantity, precision)
+            
+            # Get current market price for slippage calculation
+            current_price = self.get_current_price_enhanced(self.symbol)
+            if current_price <= 0:
+                logger.error("Failed to get current price for market order")
+                return None
 
+            # Place market order with priority execution
             order = self._execute_with_retry(
                 self.client.futures_create_order,
                 symbol=self.symbol,
                 side=side,
                 type='MARKET',
-                quantity=quantity
+                quantity=quantity,
+                newOrderRespType='FULL'  # Get full response for execution details
             )
+            
+            if not order:
+                logger.error("Market order failed, no response from Binance")
+                return None
+                
+            # Calculate actual execution price and slippage
+            if 'fills' in order and order['fills']:
+                total_qty = sum(float(fill['qty']) for fill in order['fills'])
+                weighted_price = sum(float(fill['qty']) * float(fill['price']) for fill in order['fills']) / total_qty
+                slippage = abs(weighted_price - current_price) / current_price * 100
+                
+                logger.info(f"Market order executed: {order['orderId']}, Avg Price: {weighted_price:.4f}, Slippage: {slippage:.2f}%")
+                
+                # Warn if slippage is too high
+                if slippage > 1.0:
+                    logger.warning(f"High slippage detected: {slippage:.2f}% for {self.symbol}")
+                    telegram.send_message(f"⚠️ High slippage: {slippage:.2f}% on {self.symbol} market order")
+            else:
+                logger.info(f"Market order placed: {order['orderId']}")
             
             # Cache order for tracking
             self.order_cache[order['orderId']] = order
-            logger.info(f"Market order placed: {order}")
             return order
             
         except Exception as e:

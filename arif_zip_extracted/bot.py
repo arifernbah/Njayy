@@ -97,6 +97,11 @@ class ICTBot:
     def validate_signal(self, signal):
         """Validate signal against filters (pro ICT style)"""
         try:
+            # Signal freshness check (reject signal older than 5 minutes)
+            if not signal.is_fresh(max_age_minutes=5):
+                logger.warning(f"Signal too old: {signal.get_age_minutes():.1f} minutes for {signal.pair}")
+                return False
+                
             # Killzone WIB diperpanjang: 08:00-18:00 (Asia+London panjang), NY tetap 19:00-22:00
             from datetime import datetime, timedelta
             utc_now = datetime.utcnow() + timedelta(hours=7)  # WIB

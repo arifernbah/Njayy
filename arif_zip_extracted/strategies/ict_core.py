@@ -383,24 +383,42 @@ class ICTStrategy:
 
     def create_signal(self, ob, bias):
         """Create trading signal from Order Block"""
-        return Signal(
-            pair=ob['pair'],
-            direction="BUY" if ob['type'] == "BULLISH" else "SELL",
-            entry=ob['entry_price'],
-            sl=ob['sl_price'],
-            tp1=ob['tp1_price'],
-            tp2=ob['tp2_price'],
-            strength=ob['strength'],
-            bias=bias.get('strength', 70),
-            regime=bias.get('regime_score', 0.5),
-            volatility=bias.get('volatility', 0.3),
-            has_sweep=ob.get('has_sweep', False)
-        )
+        try:
+            levels = self.calculate_sl_tp_levels(ob['candle'], ob['type'])
+            if not levels:
+                return None
+                
+            # Calculate signal metrics
+            strength = self.calculate_signal_strength(ob, bias)
+            volatility = self.calculate_volatility()
+            
+            # Create signal with timestamp
+            from datetime import datetime
+            signal = Signal(
+                pair=self.symbol,
+                direction=ob['type'],
+                entry=levels['entry'],
+                sl=levels['sl'],
+                tp1=levels['tp1'],
+                tp2=levels['tp2'],
+                strength=strength,
+                bias=bias['bias'],
+                regime=bias['regime_score'],
+                volatility=volatility,
+                has_sweep=ob.get('has_sweep', False),
+                timestamp=datetime.utcnow()  # Add timestamp for freshness check
+            )
+            
+            return signal
+            
+        except Exception as e:
+            logger.error(f"Error creating signal: {e}")
+            return None
 
 
 class Signal:
     def __init__(self, pair, direction, entry, sl, tp1, tp2,
-                 strength, bias, regime, volatility, has_sweep=False):
+                 strength, bias, regime, volatility, has_sweep=False, timestamp=None):
         self.pair = pair
         self.direction = direction
         self.entry = entry
@@ -412,8 +430,18 @@ class Signal:
         self.regime = regime
         self.volatility = volatility
         self.has_sweep = has_sweep
-        self.priority = "NORMAL"  # Default priority
-        self.created_at = datetime.utcnow()
+        self.timestamp = timestamp or datetime.utcnow()  # Default to current time if not provided
+        
+    def is_fresh(self, max_age_minutes=5):
+        """Check if signal is fresh (not too old)"""
+        from datetime import datetime
+        age_minutes = (datetime.utcnow() - self.timestamp).total_seconds() / 60
+        return age_minutes <= max_age_minutes
+        
+    def get_age_minutes(self):
+        """Get signal age in minutes"""
+        from datetime import datetime
+        return (datetime.utcnow() - self.timestamp).total_seconds() / 60
 
     def __str__(self):
         return f"Signal({self.direction} {self.pair} @ {self.entry}, SL: {self.sl}, TP1: {self.tp1}, TP2: {self.tp2}, Priority: {self.priority})"
@@ -432,7 +460,7 @@ class Signal:
             'volatility': self.volatility,
             'has_sweep': self.has_sweep,
             'priority': self.priority,
-            'created_at': self.created_at.isoformat()
+            'created_at': self.timestamp.isoformat()
         }
 
     def validate_levels(self):
