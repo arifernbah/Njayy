@@ -44,6 +44,48 @@ class EnhancedICTTrader:
         self.monitoring_thread.daemon = True
         self.monitoring_thread.start()
 
+        # Restore open positions from Binance Futures
+        try:
+            open_positions = self.client.futures_position_information()
+            for pos in open_positions:
+                if abs(float(pos['positionAmt'])) > 0:
+                    symbol = pos['symbol']
+                    entry = float(pos['entryPrice'])
+                    size = abs(float(pos['positionAmt']))
+                    direction = 'BUY' if float(pos['positionAmt']) > 0 else 'SELL'
+                    # SL/TP tidak bisa di-restore otomatis tanpa order history, set None
+                    self.active_positions[symbol] = {
+                        'symbol': symbol,
+                        'entry': entry,
+                        'sl': None,
+                        'tp1': None,
+                        'tp2': None,
+                        'size': size,
+                        'direction': direction,
+                        'opened_at': None,
+                        'orders': {},
+                        'sl_moved_to_be': False,
+                        'tp1_hit': False,
+                        'tp2_hit': False,
+                        'trailing_active': False,
+                        'market_volatility_at_entry': None,
+                        'last_price_check': None,
+                        'price_check_failures': 0,
+                        'notifications': {
+                            'tp1_notified': False,
+                            'tp2_notified': False,
+                            'sl_notified': False,
+                            'trailing_notified': False,
+                            'sl_be_notified': False
+                        }
+                    }
+            if self.active_positions:
+                from integrations.telegram import telegram
+                telegram.send_message(f"♻️ Bot restart: {len(self.active_positions)} open position(s) restored and will be monitored.")
+        except Exception as e:
+            from utils.logger import logger
+            logger.error(f"Failed to restore open positions on startup: {e}")
+
     def _monitoring_loop(self):
         """Background monitoring for health checks and maintenance"""
         while self.monitoring_active:
