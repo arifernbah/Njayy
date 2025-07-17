@@ -493,7 +493,7 @@ class EnhancedICTTrader:
             return None
 
     def place_stop_market_order_enhanced(self, side, stop_price, quantity):
-        """Enhanced stop market order with validation"""
+        """Enhanced stop market order with validation and precision"""
         try:
             if not self._rate_limit_check('stop_order'):
                 time.sleep(1)
@@ -506,19 +506,51 @@ class EnhancedICTTrader:
             precision = self.get_quantity_precision(self.symbol)
             quantity = round(quantity, precision)
 
+            # Get tick size for price precision
+            info = self.client.futures_exchange_info()
+            tick_size = 0.01
+            for s in info['symbols']:
+                if s['symbol'] == self.symbol:
+                    for f in s['filters']:
+                        if f['filterType'] == 'PRICE_FILTER':
+                            tick_size = float(f['tickSize'])
+                            break
+                    break
+            
+            # Round stop price to tick size
+            stop_price = round(round(stop_price / tick_size) * tick_size, 8)
+            
+            # Add small buffer to prevent premature triggering
+            current_price = self.get_current_price_enhanced(self.symbol)
+            if current_price > 0:
+                buffer_percent = 0.05  # 0.05% buffer
+                if side == 'SELL' and stop_price > current_price:  # SL for BUY position
+                    buffer = current_price * buffer_percent
+                    stop_price = stop_price + buffer
+                elif side == 'BUY' and stop_price < current_price:  # SL for SELL position
+                    buffer = current_price * buffer_percent
+                    stop_price = stop_price - buffer
+                
+                # Re-round after buffer adjustment
+                stop_price = round(round(stop_price / tick_size) * tick_size, 8)
+
             order = self._execute_with_retry(
                 self.client.futures_create_order,
                 symbol=self.symbol,
                 side=side,
                 type='STOP_MARKET',
-                stopPrice=round(stop_price, 2),
+                stopPrice=stop_price,
                 quantity=quantity,
                 timeInForce='GTC'
             )
             
-            self.order_cache[order['orderId']] = order
-            logger.info(f"Stop market order placed: {order}")
-            return order
+            if order:
+                self.order_cache[order['orderId']] = order
+                logger.info(f"Stop market order placed: {order}")
+                return order
+            else:
+                logger.error("Stop market order failed - no response from Binance")
+                return None
             
         except Exception as e:
             logger.error(f"Stop market order error: {e}")
@@ -701,26 +733,45 @@ class EnhancedICTTrader:
         }
 
     def should_move_sl_to_be_enhanced(self, position, current_price):
-        """Enhanced SL+ logic with time and volatility considerations"""
+        """Enhanced SL+ logic with improved accuracy and market conditions"""
         entry = position['entry']
         tp1 = position['tp1']
         direction = position['direction']
         
-        # Time factor - more conservative early in trade
-        time_factor = (datetime.utcnow() - position['opened_at']).seconds / 3600
-        volatility_threshold = 0.8 if time_factor > 2 else 0.75
+        # Calculate risk distance
+        risk_distance = abs(tp1 - entry)
+        
+        # Enhanced time factor - more conservative early in trade
+        time_since_entry = (datetime.utcnow() - position['opened_at']).total_seconds() / 3600
+        
+        # Dynamic profit target based on time and volatility
+        if time_since_entry < 1:  # First hour - very conservative
+            profit_threshold = 0.6  # 60% of risk distance
+        elif time_since_entry < 4:  # 1-4 hours - moderate
+            profit_threshold = 0.75  # 75% of risk distance
+        else:  # After 4 hours - more aggressive
+            profit_threshold = 0.8  # 80% of risk distance
         
         # Volatility adjustment
-        if self.market_volatility > position['market_volatility_at_entry'] * 1.5:
-            volatility_threshold = 0.85  # More conservative in high volatility
+        current_volatility = self.market_volatility
+        entry_volatility = position.get('market_volatility_at_entry', current_volatility)
+        
+        if current_volatility > entry_volatility * 1.3:  # High volatility
+            profit_threshold *= 0.9  # More conservative
+        elif current_volatility < entry_volatility * 0.7:  # Low volatility
+            profit_threshold *= 1.1  # More aggressive
         
         # Calculate profit target
         if direction == 'BUY':
-            profit_target = entry + volatility_threshold * (tp1 - entry)
-            return current_price >= profit_target
+            profit_target = entry + (profit_threshold * risk_distance)
+            # Add small buffer to prevent premature SL+ activation
+            buffer = current_price * 0.001  # 0.1% buffer
+            return current_price >= (profit_target + buffer)
         else:  # SELL
-            profit_target = entry - volatility_threshold * (entry - tp1)
-            return current_price <= profit_target
+            profit_target = entry - (profit_threshold * risk_distance)
+            # Add small buffer to prevent premature SL+ activation
+            buffer = current_price * 0.001  # 0.1% buffer
+            return current_price <= (profit_target - buffer)
 
     def _check_stuck_positions(self):
         """Check for positions that haven't been updated recently"""
@@ -789,74 +840,170 @@ class EnhancedICTTrader:
             logger.error(f"Position management error: {e}")
 
     def _manage_single_position(self, pos_id, position, current_price):
-        """Manage a single position with enhanced logic"""
+        """Manage a single position with enhanced logic and better SL detection"""
         entry = position['entry']
         tp1 = position['tp1']
         tp2 = position['tp2']
         sl = position['sl']
         direction = position['direction']
 
-        # Calculate targets
-        if direction == 'BUY':
-            tp1_hit = current_price >= tp1
-            tp2_hit = current_price >= tp2
-            sl_hit = current_price <= sl
-        else:  # SELL
-            tp1_hit = current_price <= tp1
-            tp2_hit = current_price <= tp2
-            sl_hit = current_price >= sl
+        # Enhanced price validation
+        if current_price <= 0:
+            logger.warning(f"Invalid current price for position {pos_id}: {current_price}")
+            return
 
-        # 1. Enhanced SL+ logic
+        # Calculate targets with small tolerance for price fluctuations
+        tolerance = current_price * 0.0005  # 0.05% tolerance
+        
+        if direction == 'BUY':
+            tp1_hit = current_price >= (tp1 - tolerance)
+            tp2_hit = current_price >= (tp2 - tolerance)
+            sl_hit = current_price <= (sl + tolerance)
+        else:  # SELL
+            tp1_hit = current_price <= (tp1 + tolerance)
+            tp2_hit = current_price <= (tp2 + tolerance)
+            sl_hit = current_price >= (sl - tolerance)
+
+        # 1. Enhanced SL+ logic with confirmation
         if not position['sl_moved_to_be']:
             if self.should_move_sl_to_be_enhanced(position, current_price):
-                self.move_sl_to_breakeven_enhanced(position)
+                # Add confirmation check - ensure we're still in profit
+                if direction == 'BUY' and current_price > entry:
+                    self.move_sl_to_breakeven_enhanced(position)
+                elif direction == 'SELL' and current_price < entry:
+                    self.move_sl_to_breakeven_enhanced(position)
 
-        # 2. Handle TP1 hit
+        # 2. Handle TP1 hit with confirmation
         if not position['tp1_hit'] and tp1_hit:
-            self._handle_tp1_hit(pos_id, position)
+            # Confirm TP1 hit by checking if price stays above/below for a moment
+            time.sleep(0.5)  # Brief pause
+            confirm_price = self.get_current_price_enhanced(self.symbol)
+            if confirm_price > 0:
+                if direction == 'BUY' and confirm_price >= (tp1 - tolerance):
+                    self._handle_tp1_hit(pos_id, position)
+                elif direction == 'SELL' and confirm_price <= (tp1 + tolerance):
+                    self._handle_tp1_hit(pos_id, position)
 
-        # 3. Handle TP2 hit
+        # 3. Handle TP2 hit with confirmation
         if not position['tp2_hit'] and tp2_hit:
-            self._handle_tp2_hit(pos_id, position)
+            # Confirm TP2 hit
+            time.sleep(0.5)  # Brief pause
+            confirm_price = self.get_current_price_enhanced(self.symbol)
+            if confirm_price > 0:
+                if direction == 'BUY' and confirm_price >= (tp2 - tolerance):
+                    self._handle_tp2_hit(pos_id, position)
+                elif direction == 'SELL' and confirm_price <= (tp2 + tolerance):
+                    self._handle_tp2_hit(pos_id, position)
 
-        # 4. Handle SL hit
+        # 4. Handle SL hit with confirmation
         if not position['notifications']['sl_notified'] and sl_hit:
-            self._handle_sl_hit(pos_id, position)
+            # Confirm SL hit
+            time.sleep(0.5)  # Brief pause
+            confirm_price = self.get_current_price_enhanced(self.symbol)
+            if confirm_price > 0:
+                if direction == 'BUY' and confirm_price <= (sl + tolerance):
+                    self._handle_sl_hit(pos_id, position)
+                elif direction == 'SELL' and confirm_price >= (sl - tolerance):
+                    self._handle_sl_hit(pos_id, position)
 
     def move_sl_to_breakeven_enhanced(self, position):
-        """Enhanced SL+ movement with validation"""
+        """Enhanced SL+ movement with improved accuracy and validation"""
         try:
-            # Cancel existing SL order
+            # Validate current position status
+            if position['sl_moved_to_be']:
+                logger.warning("SL already moved to breakeven")
+                return False
+                
+            # Get current market price for validation
+            current_price = self.get_current_price_enhanced(self.symbol)
+            if current_price <= 0:
+                logger.error("Cannot get current price for SL+ validation")
+                return False
+            
+            # Validate that we're actually in profit before moving SL
+            entry = position['entry']
+            direction = position['direction']
+            
+            if direction == 'BUY' and current_price <= entry:
+                logger.warning(f"BUY position not in profit: Entry={entry}, Current={current_price}")
+                return False
+            elif direction == 'SELL' and current_price >= entry:
+                logger.warning(f"SELL position not in profit: Entry={entry}, Current={current_price}")
+                return False
+            
+            # Cancel existing SL order with retry
             if position['orders'].get('sl_order'):
-                self.client.futures_cancel_order(
-                    symbol=self.symbol,
-                    orderId=position['orders']['sl_order']['orderId']
-                )
+                try:
+                    cancel_result = self._execute_with_retry(
+                        self.client.futures_cancel_order,
+                        symbol=self.symbol,
+                        orderId=position['orders']['sl_order']['orderId'],
+                        max_retries=3,
+                        delay=1
+                    )
+                    if not cancel_result:
+                        logger.error("Failed to cancel existing SL order")
+                        return False
+                except Exception as e:
+                    logger.error(f"Error canceling SL order: {e}")
+                    return False
 
-            # Place new SL at break-even
-            opposite_side = 'SELL' if position['direction'] == 'BUY' else 'BUY'
+            # Calculate new SL price with small buffer for safety
+            buffer_percent = 0.02  # 0.02% buffer from entry
+            if direction == 'BUY':
+                new_sl_price = entry * (1 - buffer_percent)
+            else:  # SELL
+                new_sl_price = entry * (1 + buffer_percent)
+            
+            # Get tick size for price precision
+            info = self.client.futures_exchange_info()
+            tick_size = 0.01
+            for s in info['symbols']:
+                if s['symbol'] == self.symbol:
+                    for f in s['filters']:
+                        if f['filterType'] == 'PRICE_FILTER':
+                            tick_size = float(f['tickSize'])
+                            break
+                    break
+            
+            # Round to tick size
+            new_sl_price = round(round(new_sl_price / tick_size) * tick_size, 8)
+
+            # Place new SL at breakeven with buffer
+            opposite_side = 'SELL' if direction == 'BUY' else 'BUY'
             new_sl_order = self.place_stop_market_order_enhanced(
                 opposite_side, 
-                position['entry'],
+                new_sl_price,
                 position['size']
             )
             
             if new_sl_order:
                 position['orders']['sl_order'] = new_sl_order
+                position['sl'] = new_sl_price
                 position['sl_moved_to_be'] = True
                 
-                # Send notification
+                # Send enhanced notification
                 if not position['notifications']['sl_be_notified']:
+                    profit_pnl = self._calculate_position_pnl(position)
                     telegram.send_message(
                         f"📈 *SL MOVED TO BREAKEVEN*\n"
                         f"📌 PAIR: {self.symbol}\n"
-                        f"🛡️ Risk eliminated - SL at entry: ${position['entry']:.2f}\n"
-                        f"💹 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}"
+                        f"🛡️ Risk eliminated - SL at: ${new_sl_price:.4f}\n"
+                        f"💰 Current PnL: ${profit_pnl:.2f}\n"
+                        f"💹 Market Price: ${current_price:.4f}\n"
+                        f"⏰ Time in trade: {((datetime.utcnow() - position['opened_at']).total_seconds() / 3600):.1f}h"
                     )
                     position['notifications']['sl_be_notified'] = True
+                
+                logger.info(f"SL successfully moved to breakeven: {new_sl_price}")
+                return True
+            else:
+                logger.error("Failed to place new SL order at breakeven")
+                return False
                     
         except Exception as e:
             logger.error(f"Failed to move SL to breakeven: {e}")
+            return False
 
     def _handle_tp1_hit(self, pos_id, position):
         """Handle TP1 hit event"""
