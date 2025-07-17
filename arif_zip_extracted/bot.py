@@ -88,14 +88,34 @@ class ICTBot:
         return None
 
     def validate_signal(self, signal):
-        """Validate signal against filters"""
+        """Validate signal against filters (pro ICT style)"""
         try:
-            return (
-                signal.strength >= self.filters['signal_strength'] and
-                signal.bias >= self.filters['bias_strength'] and
-                signal.regime >= self.filters['regime_score'] and
+            # Killzone WIB: 14:00-17:00 dan 19:00-22:00
+            from datetime import datetime, timedelta
+            utc_now = datetime.utcnow() + timedelta(hours=7)  # WIB
+            hour = utc_now.hour
+            in_killzone = (14 <= hour < 17) or (19 <= hour < 22)
+            if not in_killzone:
+                return False
+            # Cooldown antar OP per pair
+            last_entry = getattr(self, 'last_entry_time', {})
+            pair = getattr(signal, 'pair', None) or getattr(signal, 'symbol', None)
+            if pair:
+                if pair in last_entry:
+                    if (utc_now - last_entry[pair]).total_seconds() < 20*60:
+                        return False
+            # Filter pro ICT
+            valid = (
+                signal.strength >= 8 and
+                signal.bias >= 7 and
+                signal.regime >= 7 and
                 self.filters['vol_range'][0] <= signal.volatility <= self.filters['vol_range'][1]
             )
+            if valid and pair:
+                if not hasattr(self, 'last_entry_time'):
+                    self.last_entry_time = {}
+                self.last_entry_time[pair] = utc_now
+            return valid
         except Exception as e:
             logger.error(f"Signal validation error: {e}")
             return False
