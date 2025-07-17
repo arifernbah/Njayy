@@ -1,0 +1,9 @@
+python-binance==1.0.29
+requests==2.31.0
+python-dotenv==1.0.1
+pandas==2.2.2
+numpy==1.26.4
+
+# Untuk logging dan Telegram
+urllib3==2.2.1
+certifi==2024.2.2
