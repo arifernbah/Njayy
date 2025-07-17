@@ -15,7 +15,7 @@ class EnhancedICTTrader:
         self.symbol = "BTCUSDT"  # Default symbol, tetap bisa diubah untuk multi-pair
         self.active_positions = {}
         self.daily_trades = 0
-        self.leverage = 10
+        self.leverage = 5
         self.performance = {
             "wins": 0,
             "losses": 0,
