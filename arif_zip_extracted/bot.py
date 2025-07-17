@@ -1,4 +1,3 @@
-from integrations.command_listener import start_command_listener
 import time
 from datetime import datetime
 from core.config import config
