@@ -851,4 +851,29 @@ class EnhancedICTTrader:
         except Exception as e:
             logger.error(f"Gagal cek margin: {e}")
             return False
+
+    def get_drawdown(self):
+        """Calculate current drawdown percentage"""
+        try:
+            if self.performance['max_balance'] <= 0:
+                return 0.0
+            current_balance = self.get_account_balance()
+            if current_balance <= 0:
+                return 0.0
+            drawdown = ((self.performance['max_balance'] - current_balance) / self.performance['max_balance']) * 100
+            return max(0.0, drawdown)  # Ensure non-negative
+        except Exception as e:
+            logger.error(f"Failed to calculate drawdown: {e}")
+            return 0.0
+
+    def get_max_drawdown(self):
+        """Calculate maximum drawdown experienced"""
+        try:
+            if self.performance['max_balance'] <= 0:
+                return 0.0
+            max_drawdown = ((self.performance['max_balance'] - self.performance['min_balance']) / self.performance['max_balance']) * 100
+            return max(0.0, max_drawdown)
+        except Exception as e:
+            logger.error(f"Failed to calculate max drawdown: {e}")
+            return 0.0
     
