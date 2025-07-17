@@ -877,3 +877,11 @@ class EnhancedICTTrader:
             logger.error(f"Failed to calculate max drawdown: {e}")
             return 0.0
     
+    def calculate_position_size(self, signal, base_risk_percent=2):
+        """Calculate position size (alias for adaptive method)"""
+        return self.calculate_adaptive_position_size(signal, base_risk_percent)
+
+    def get_daily_trades(self):
+        """Get current daily trades count"""
+        return self.daily_trades
+    
