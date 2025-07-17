@@ -76,6 +76,16 @@ class EnhancedICTTrader:
                         tp1_order = tp_candidates[0]
                     if len(tp_candidates) > 1:
                         tp2_order = tp_candidates[1]
+                    # Trailing stop
+                    trailing_order = None
+                    for o in open_orders:
+                        if o['type'] == 'TRAILING_STOP_MARKET':
+                            trailing_order = o
+                    # SL+ (breakeven): SL order di harga entry
+                    sl_moved_to_be = False
+                    if sl_order and abs(float(sl_order['stopPrice']) - entry) < 1e-6:
+                        sl_moved_to_be = True
+                    trailing_active = trailing_order is not None
                     self.active_positions[symbol] = {
                         'symbol': symbol,
                         'entry': entry,
@@ -88,12 +98,13 @@ class EnhancedICTTrader:
                         'orders': {
                             'sl_order': sl_order,
                             'tp1_order': tp1_order,
-                            'tp2_order': tp2_order
+                            'tp2_order': tp2_order,
+                            'trailing_order': trailing_order
                         },
-                        'sl_moved_to_be': False,
+                        'sl_moved_to_be': sl_moved_to_be,
                         'tp1_hit': False,
                         'tp2_hit': False,
-                        'trailing_active': False,
+                        'trailing_active': trailing_active,
                         'market_volatility_at_entry': None,
                         'last_price_check': None,
                         'price_check_failures': 0,
