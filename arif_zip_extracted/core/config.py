@@ -57,6 +57,7 @@ class Config:
         self.MIN_SIGNAL_STRENGTH = int(os.getenv('MIN_SIGNAL_STRENGTH', 70))
         self.MIN_BIAS_STRENGTH = int(os.getenv('MIN_BIAS_STRENGTH', 35))
         self.MIN_REGIME_SCORE = int(os.getenv('MIN_REGIME_SCORE', 55))
+        self.MIN_QUALITY_SCORE = int(os.getenv('MIN_QUALITY_SCORE', 70))
         
         # Volatility Range
         self.VOL_RANGE_MIN = float(os.getenv('VOL_RANGE_MIN', 0.4))
@@ -167,6 +168,7 @@ class Config:
             'signal_strength': self.MIN_SIGNAL_STRENGTH,
             'bias_strength': self.MIN_BIAS_STRENGTH,
             'regime_score': self.MIN_REGIME_SCORE,
+            'min_quality_score': self.MIN_QUALITY_SCORE,
             'vol_range': [self.VOL_RANGE_MIN, self.VOL_RANGE_MAX]
         }
     

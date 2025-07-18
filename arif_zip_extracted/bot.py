@@ -127,7 +127,7 @@ class ICTBot:
                 signal.regime >= 7 and
                 self.filters['vol_range'][0] <= signal.volatility <= self.filters['vol_range'][1] and
                 # ✅ NEW: ICT Quality checks
-                signal.quality_score >= 60 and  # Minimum quality score
+                signal.quality_score >= self.filters['min_quality_score'] and  # Minimum quality score from .env
                 signal.validate_levels()  # Enhanced validation
             )
             if valid and pair:
