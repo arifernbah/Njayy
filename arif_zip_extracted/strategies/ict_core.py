@@ -632,8 +632,10 @@ class ICTStrategy:
     def on_new_candle(self, symbol, candle, analyzer):
         import pandas as pd
         from execution.trader import EnhancedICTTrader
+        logger.info(f"[SCAN] Candle baru diterima untuk {symbol} pada {candle['timestamp']}")
         # Inisialisasi data historis jika belum ada
         if symbol not in self.ohlcv_data or self.ohlcv_data[symbol].empty:
+            logger.info(f"[SCAN] Inisialisasi data historis untuk {symbol}")
             self.initialize_ohlcv_data(symbol, interval='15m', limit=200)  # interval bisa diambil dari config
         # Update rolling DataFrame OHLCV
         df = self.ohlcv_data[symbol]
@@ -642,18 +644,24 @@ class ICTStrategy:
         if len(df) > 200:
             df = df.iloc[-200:]
         self.ohlcv_data[symbol] = df
+        logger.info(f"[SCAN] Update DataFrame {symbol}: {len(df)} bar")
         # Jalankan analisis sinyal jika cukup data
         if len(df) >= 50:
+            logger.info(f"[SCAN] Analisa bias untuk {symbol}")
             bias = analyzer.analyze_bias(symbol)
             if not bias or 'strength' not in bias or 'regime' not in bias:
                 logger.warning(f"[BIAS] Skip signal analysis for {symbol}: bias is None atau key hilang. Data candle: {len(df)} bar.")
                 return
+            logger.info(f"[SCAN] Cari sinyal untuk {symbol}")
             signals = self.find_signals(bias, symbol)
             if signals:
+                logger.info(f"[SCAN] {len(signals)} sinyal ditemukan untuk {symbol}, eksekusi...")
                 trader = EnhancedICTTrader()
                 trader.symbol = symbol
                 for signal in signals:
                     trader.execute_entry_enhanced(signal)
+            else:
+                logger.info(f"[SCAN] Tidak ada sinyal valid untuk {symbol}")
 
 
 class Signal:
