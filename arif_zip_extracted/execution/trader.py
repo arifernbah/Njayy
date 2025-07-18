@@ -130,7 +130,6 @@ class EnhancedICTTrader:
                 from integrations.telegram import telegram
                 telegram.send_message(f"♻️ Bot restart: {len(self.active_positions)} open position(s) with SL/TP restored and will be monitored.")
         except Exception as e:
-            from utils.logger import logger
             logger.error(f"Failed to restore open positions/orders on startup: {e}")
         # === Log initial balance at startup ===
         try:
