@@ -32,6 +32,7 @@ class ICTBot:
         self.risk_management = config.get_risk_settings()
         self.sessions = config.get_session_settings()
         self.trading_pairs = config.TRADING_PAIRS
+        self.default_interval = config.DEFAULT_INTERVAL  # Tambah baris ini
 
     def start(self):
         """Initialize and start the bot"""
