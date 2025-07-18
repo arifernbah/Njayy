@@ -36,7 +36,8 @@ class EnhancedICTTrader:
         }
         
         # Enhanced features
-        self.max_daily_trades = 50
+        self.max_daily_trades = config.MAX_DAILY_TRADES
+        self.max_open_positions = config.MAX_OPEN_POSITIONS
         self.max_consecutive_losses = 5
         self.connection_retry_count = 0
         self.last_heartbeat = datetime.utcnow()
@@ -512,6 +513,14 @@ class EnhancedICTTrader:
     def execute_entry_enhanced(self, signal):
         """Enhanced entry execution with comprehensive checks and auto leverage"""
         try:
+            # Limitasi jumlah entry harian
+            if self.daily_trades >= self.max_daily_trades:
+                logger.warning(f"[ENTRY LIMIT] Entry harian sudah mencapai {self.max_daily_trades}, skip entry baru.")
+                return False
+            # Limitasi jumlah posisi aktif bersamaan
+            if len(self.active_positions) >= self.max_open_positions:
+                logger.warning(f"[POSITION LIMIT] Posisi aktif sudah {self.max_open_positions}, skip entry baru.")
+                return False
             # Anti-double entry: cek apakah sudah ada posisi aktif untuk symbol ini
             for pos in self.active_positions.values():
                 if pos.get('symbol') == self.symbol:
