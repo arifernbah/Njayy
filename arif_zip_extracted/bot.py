@@ -297,7 +297,7 @@ class ICTBot:
             f"Min Bias Strength: {safe_get(s.filters, 'bias_strength', default=0)}\n"
             f"Min Regime Score: {safe_get(s.filters, 'regime_score', default=0)}\n"
             f"Volatility Range: {safe_get(s.filters, 'vol_range', default=[0,0])[0]} - {safe_get(s.filters, 'vol_range', default=[0,0])[1]}\n"
-            f"Timeframe aktif: {config.DEFAULT_INTERVAL} (bisa diubah lewat .env: DEFAULT_INTERVAL)\n"
+            f"Timeframe aktif: {config.DEFAULT_INTERVAL}\n"
             f"Session: London {config.LONDON_START}-{config.LONDON_END}, NY {config.NY_START}-{config.NY_END}, Asia {config.ASIAN_START}-{config.ASIAN_END}\n"
             f"Pairs: {', '.join(self.trading_pairs)}\n"
             f"Loop Interval: {config.LOOP_INTERVAL}s\n"
