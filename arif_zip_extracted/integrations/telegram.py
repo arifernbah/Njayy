@@ -20,11 +20,13 @@ class TelegramBot:
         self.base_url = f"https://api.telegram.org/bot{self.token}"
         self._polling_active = False
         self._polling_thread = None
-        self._last_update_id = None
         self.message_handler = None  # User can set this to a function
-        
-        # Test connection on init
-        self.test_connection()
+        # Load last update id from file
+        try:
+            with open('telegram_offset.txt', 'r') as f:
+                self._last_update_id = int(f.read().strip())
+        except:
+            self._last_update_id = None
     
     def test_connection(self):
         """Test Telegram bot connection"""
@@ -350,6 +352,13 @@ class TelegramBot:
             updates = self.poll_messages()
             for update in updates:
                 self._last_update_id = safe_get(update, 'update_id', default=None)
+                # Simpan offset ke file setiap kali update
+                if self._last_update_id is not None:
+                    try:
+                        with open('telegram_offset.txt', 'w') as f:
+                            f.write(str(self._last_update_id))
+                    except Exception as e:
+                        logger.error(f"Failed to save telegram offset: {e}")
                 if 'message' in update:
                     msg = safe_get(update, 'message', default=None)
                     if self.message_handler:
