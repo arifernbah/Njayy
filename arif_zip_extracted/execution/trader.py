@@ -471,6 +471,7 @@ class EnhancedICTTrader:
             if abs(price - current_price) / current_price > max_deviation:
                 logger.error(f"Limit price terlalu jauh dari harga pasar: {price} vs {current_price}")
                 return None
+            # Tambahkan reduceOnly agar TP benar-benar close posisi
             order = self._execute_with_retry(
                 self.client.futures_create_order,
                 symbol=self.symbol,
@@ -478,13 +479,14 @@ class EnhancedICTTrader:
                 type='LIMIT',
                 price=price,
                 quantity=quantity,
-                timeInForce='GTC'
+                timeInForce='GTC',
+                reduceOnly=True
             )
             if not order:
                 logger.error("Limit order gagal, tidak ada response dari Binance.")
                 return None
             self.order_cache[safe_get(order, 'orderId', default=0)] = order
-            logger.info(f"Limit order placed: {order}")
+            logger.info(f"Limit order placed (reduceOnly): {order}")
             return order
         except Exception as e:
             logger.error(f"Limit order error: {e}")
