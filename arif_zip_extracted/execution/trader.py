@@ -220,25 +220,66 @@ class EnhancedICTTrader:
                 time.sleep(30)
 
     def _health_check(self):
-        """Perform health checks"""
+        """Perform health checks with enhanced error handling"""
         try:
-            # Test connection
-            self.client.futures_account_balance()
-            self.last_heartbeat = datetime.utcnow()
-            self.connection_retry_count = 0
-            
-            # Check for stuck positions
-            self._check_stuck_positions()
-            
+            # Test connection with better error handling
+            try:
+                # Use a simpler endpoint first to test connectivity
+                server_time = self.client.get_server_time()
+                if not server_time or 'serverTime' not in server_time:
+                    raise Exception("Invalid server time response")
+                
+                # Now test futures account balance
+                balance_response = self.client.futures_account_balance()
+                
+                # Validate response is not HTML
+                if isinstance(balance_response, str) and '<html>' in balance_response.lower():
+                    raise Exception("Received HTML response instead of JSON")
+                
+                if not isinstance(balance_response, list):
+                    raise Exception("Invalid balance response format")
+                
+                self.last_heartbeat = datetime.utcnow()
+                self.connection_retry_count = 0
+                
+                # Check for stuck positions
+                self._check_stuck_positions()
+                
+            except Exception as api_error:
+                # Check if it's an HTML error response
+                error_str = str(api_error)
+                if '<html>' in error_str.lower() or 'doctype' in error_str.lower():
+                    logger.warning(f"Binance returned HTML error page (retry {self.connection_retry_count + 1})")
+                    self.connection_retry_count += 1
+                    
+                    if self.connection_retry_count >= 3:
+                        telegram.send_critical(
+                            f"🚨 *BINANCE API ERROR*\n"
+                            f"❌ HTML error response received\n"
+                            f"🔄 Retry count: {self.connection_retry_count}\n"
+                            f"⏰ Time: {datetime.utcnow().strftime('%H:%M UTC')}\n"
+                            f"⚠️ Possible causes:\n"
+                            f"• Rate limiting\n"
+                            f"• Network issues\n"
+                            f"• Binance server problems\n"
+                            f"• API endpoint issues",
+                            msg_type='API Error'
+                        )
+                    return
+                else:
+                    # Regular API error
+                    raise api_error
+                    
         except Exception as e:
             self.connection_retry_count += 1
             logger.warning(f"Health check failed (retry {self.connection_retry_count}): {e}")
             
             if self.connection_retry_count >= 5:
-                telegram.send_message(
+                telegram.send_critical(
                     f"🚨 *CONNECTION ISSUE*\n"
                     f"Bot connection unstable\n"
-                    f"Retry count: {self.connection_retry_count}"
+                    f"Retry count: {self.connection_retry_count}\n"
+                    f"Error: {str(e)[:100]}..."
                 )
 
     def _cleanup_old_api_calls(self):
@@ -309,19 +350,43 @@ class EnhancedICTTrader:
         from core.config import config
         max_retries = max_retries or config.BINANCE_MAX_RETRIES
         delay = delay or config.BINANCE_RETRY_DELAY
+        
         for attempt in range(max_retries):
             try:
-                return func(*args, **kwargs)
+                result = func(*args, **kwargs)
+                
+                # Check if result is HTML error response
+                if isinstance(result, str) and ('<html>' in result.lower() or 'doctype' in result.lower()):
+                    raise Exception(f"HTML error response received: {result[:200]}...")
+                
+                return result
+                
             except Exception as e:
-                # Cek jika error karena rate limit (HTTP 429)
+                error_str = str(e)
+                
+                # Check for HTML error responses
+                if '<html>' in error_str.lower() or 'doctype' in error_str.lower():
+                    logger.warning(f"HTML error response on {func.__name__}, attempt {attempt+1}/{max_retries}")
+                    if attempt == max_retries - 1:  # Last attempt
+                        telegram.send_critical(
+                            f"🚨 *BINANCE HTML ERROR*\n"
+                            f"❌ Function: {func.__name__}\n"
+                            f"🔄 Attempts: {max_retries}\n"
+                            f"⏰ Time: {datetime.utcnow().strftime('%H:%M UTC')}",
+                            msg_type='API Error'
+                        )
+                    time.sleep(delay * (2 ** attempt) + 5)  # Extra delay for HTML errors
+                    continue
+                
+                # Check for rate limiting (HTTP 429)
                 if hasattr(e, 'status_code') and getattr(e, 'status_code', None) == 429:
                     logger.warning(f"Rate limit hit (429) on {func.__name__}, attempt {attempt+1}")
-                    time.sleep(delay * (2 ** attempt))
+                    time.sleep(delay * (2 ** attempt) + 10)  # Longer delay for rate limits
                 else:
                     logger.warning(f"Retry {attempt + 1}/{max_retries} for {func.__name__}: {e}")
                     time.sleep(delay * (2 ** attempt))
+        
         logger.error(f"Function {func.__name__} failed after {max_retries} attempts.")
-        # (Opsional) telegram.send_message(f"Binance API error berulang pada {func.__name__}")
         return None
 
     def get_account_balance(self, symbol=None):
@@ -1260,4 +1325,88 @@ class EnhancedICTTrader:
     def get_performance(self):
         """Return current performance dictionary"""
         return self.performance
+    
+    def test_binance_connection(self):
+        """Test Binance API connection and provide diagnostics"""
+        try:
+            logger.info("Testing Binance API connection...")
+            
+            # Test 1: Server time (no auth required)
+            try:
+                server_time = self.client.get_server_time()
+                logger.info(f"✅ Server time test passed: {server_time}")
+            except Exception as e:
+                logger.error(f"❌ Server time test failed: {e}")
+                return False
+            
+            # Test 2: Exchange info (no auth required)
+            try:
+                exchange_info = self.client.futures_exchange_info()
+                if isinstance(exchange_info, dict) and 'symbols' in exchange_info:
+                    logger.info(f"✅ Exchange info test passed: {len(exchange_info['symbols'])} symbols")
+                else:
+                    logger.error("❌ Exchange info test failed: Invalid response format")
+                    return False
+            except Exception as e:
+                logger.error(f"❌ Exchange info test failed: {e}")
+                return False
+            
+            # Test 3: Account balance (requires auth)
+            try:
+                balance = self.client.futures_account_balance()
+                if isinstance(balance, list):
+                    usdt_balance = next((b for b in balance if b['asset'] == 'USDT'), None)
+                    if usdt_balance:
+                        logger.info(f"✅ Account balance test passed: {usdt_balance['balance']} USDT")
+                    else:
+                        logger.warning("⚠️ Account balance test passed but no USDT balance found")
+                else:
+                    logger.error("❌ Account balance test failed: Invalid response format")
+                    return False
+            except Exception as e:
+                logger.error(f"❌ Account balance test failed: {e}")
+                return False
+            
+            # Test 4: Position info (requires auth)
+            try:
+                positions = self.client.futures_position_information()
+                if isinstance(positions, list):
+                    active_positions = [p for p in positions if abs(float(p['positionAmt'])) > 0]
+                    logger.info(f"✅ Position info test passed: {len(active_positions)} active positions")
+                else:
+                    logger.error("❌ Position info test failed: Invalid response format")
+                    return False
+            except Exception as e:
+                logger.error(f"❌ Position info test failed: {e}")
+                return False
+            
+            logger.info("🎉 All Binance API tests passed!")
+            return True
+            
+        except Exception as e:
+            logger.error(f"❌ Connection test failed: {e}")
+            return False
+
+    def get_connection_diagnostics(self):
+        """Get detailed connection diagnostics"""
+        diagnostics = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'api_key_configured': bool(config.BINANCE_API_KEY),
+            'api_secret_configured': bool(config.BINANCE_SECRET),
+            'connection_retry_count': self.connection_retry_count,
+            'last_heartbeat': self.last_heartbeat.isoformat() if self.last_heartbeat else None,
+            'websocket_connected': self.ws_connected,
+            'rate_limit_status': {}
+        }
+        
+        # Check rate limits
+        for endpoint, calls in self.api_call_times.items():
+            recent_calls = len([c for c in calls if (datetime.utcnow() - c).total_seconds() < 60])
+            diagnostics['rate_limit_status'][endpoint] = {
+                'recent_calls': recent_calls,
+                'max_allowed': self.max_calls_per_minute,
+                'limit_reached': recent_calls >= self.max_calls_per_minute
+            }
+        
+        return diagnostics
     

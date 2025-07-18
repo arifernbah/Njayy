@@ -34,6 +34,24 @@ class ICTBot:
         """Initialize and start the bot"""
         try:
             logger.info("Starting ICT Bot v8.1...")
+            
+            # Test Binance connection on startup
+            logger.info("Testing Binance connection on startup...")
+            if not self.trader.test_binance_connection():
+                logger.error("❌ Binance connection test failed on startup!")
+                telegram.send_critical(
+                    "🚨 *STARTUP ERROR*\n"
+                    "❌ Binance connection test failed\n"
+                    "🔧 Please check:\n"
+                    "• API key and secret\n"
+                    "• Network connectivity\n"
+                    "• Binance server status\n"
+                    "• Use /test command to retry",
+                    msg_type='Startup Error'
+                )
+                return
+            
+            logger.info("✅ Binance connection test passed!")
             self.send_startup_message()
             
             while True:
@@ -257,6 +275,35 @@ class ICTBot:
                 drawdown = self.trader.get_drawdown()
                 telegram.send_medium_priority(f"📉 Drawdown saat ini: {drawdown:.2f}%", msg_type='Drawdown Check')
                 
+            elif command == '/test':
+                # Test Binance connection
+                telegram.send_medium_priority("🔍 Testing Binance connection...", msg_type='Connection Test')
+                success = self.trader.test_binance_connection()
+                if success:
+                    telegram.send_medium_priority("✅ Binance connection test passed!", msg_type='Connection Test')
+                else:
+                    telegram.send_critical("❌ Binance connection test failed!", msg_type='Connection Test')
+                
+            elif command == '/diagnostics':
+                # Get connection diagnostics
+                diagnostics = self.trader.get_connection_diagnostics()
+                msg = f"""
+🔧 *Connection Diagnostics*
+
+⏰ Timestamp: {diagnostics['timestamp']}
+🔑 API Key: {'✅' if diagnostics['api_key_configured'] else '❌'}
+🔐 API Secret: {'✅' if diagnostics['api_secret_configured'] else '❌'}
+🔄 Retry Count: {diagnostics['connection_retry_count']}
+💓 Last Heartbeat: {diagnostics['last_heartbeat'] or 'Never'}
+📡 WebSocket: {'✅' if diagnostics['websocket_connected'] else '❌'}
+
+📊 Rate Limits:
+"""
+                for endpoint, status in diagnostics['rate_limit_status'].items():
+                    msg += f"• {endpoint}: {status['recent_calls']}/{status['max_allowed']} calls\n"
+                
+                telegram.send_medium_priority(msg, msg_type='Diagnostics')
+                
             elif command == '/help':
                 telegram.send_low_priority("""
 🤖 *ICT Bot Commands*
@@ -264,6 +311,8 @@ class ICTBot:
 /status - Check bot status
 /balance - Get current balance
 /drawdown - Get current drawdown
+/test - Test Binance connection
+/diagnostics - Get connection diagnostics
 /help - Show this help
 /shutdown - Shutdown bot
 
