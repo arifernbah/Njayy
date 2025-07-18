@@ -88,7 +88,7 @@ class ICTBot:
         return None
 
     def validate_signal(self, signal):
-        """Validate signal against filters (pro ICT style)"""
+        """Enhanced signal validation with ICT quality checks"""
         try:
             # Killzone WIB diperpanjang: 08:00-18:00 (Asia+London panjang), NY tetap 19:00-22:00
             from datetime import datetime, timedelta
@@ -107,12 +107,15 @@ class ICTBot:
                 if pair in last_entry:
                     if (utc_now - last_entry[pair]).total_seconds() < 20*60:
                         return False
-            # Filter pro ICT
+            # ✅ ENHANCED: ICT Quality-based filtering
             valid = (
                 signal.strength >= 8 and
                 signal.bias >= 7 and
                 signal.regime >= 7 and
-                self.filters['vol_range'][0] <= signal.volatility <= self.filters['vol_range'][1]
+                self.filters['vol_range'][0] <= signal.volatility <= self.filters['vol_range'][1] and
+                # ✅ NEW: ICT Quality checks
+                signal.quality_score >= 60 and  # Minimum quality score
+                signal.validate_levels()  # Enhanced validation
             )
             if valid and pair:
                 if not hasattr(self, 'last_entry_time'):
@@ -124,7 +127,7 @@ class ICTBot:
             return False
 
     def execute_signal(self, signal, bias):
-        """Execute validated signal"""
+        """Execute validated signal with ICT quality enhancements"""
         try:
             # Calculate position size
             risk = self.calculate_risk()
@@ -134,31 +137,15 @@ class ICTBot:
             success = self.trader.execute_entry_enhanced(signal)
             
             if success and config.ENABLE_TELEGRAM:
-                # Send signal notification
-                timestamp = datetime.utcnow().strftime("%H:%M UTC")
-                message = f"""
-📢 *ENTRY SIGNAL DETECTED*
-
-📌 *PAIR*: {signal.pair}
-🕒 *Time*: {timestamp}
-📊 *Bias*: {bias['direction']} ({bias['strength']:.1f})
-🧠 *Signal Strength*: {signal.strength}
-🧱 *OB + BOS Valid*: ✅
-🕳 *FVG*: ✅
-💧 *Liquidity Sweep*: ✅
-🔥 *Displacement Candle*: ✅
-⏰ *Killzone Active*: {'Ya' if self.strategy.in_killzone() else 'Tidak'}
-
-🎯 *ENTRY*: {signal.entry}
-🛡 *SL*: {signal.sl}
-🎯 *TP1*: {signal.tp1}
-🎯 *TP2*: {signal.tp2}
-⚖️ *Risk %*: {risk * 100:.1f}%
-💰 *Size*: {position_size}
-
-📈 *Win Rate Saat Ini*: ~{self.trader.get_win_rate()}%
-"""
-                telegram.send_message(message)
+                # ✅ ENHANCED: Send quality-based alerts
+                if signal.quality_class == 'PREMIUM':
+                    telegram.send_premium_signal_alert(signal, bias)
+                else:
+                    telegram.send_trade_alert(signal, bias, risk, position_size)
+                
+                # ✅ ADDITIONAL: Send ICT quality analysis
+                if signal.quality_score >= 80:
+                    telegram.send_ict_quality_alert(signal, bias)
                 
         except Exception as e:
             logger.error(f"Signal execution error: {e}")

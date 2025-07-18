@@ -63,19 +63,41 @@ class TelegramBot:
         return False
     
     def send_trade_alert(self, signal, bias, risk, position_size):
-        """Send formatted trade alert"""
+        """Send enhanced trade alert with ICT quality information"""
         timestamp = datetime.utcnow().strftime("%H:%M UTC")
+        
+        # ✅ ENHANCED: ICT Quality Information
+        quality_emoji = {
+            'PREMIUM': '💎',
+            'STANDARD': '⭐',
+            'BASIC': '📊',
+            'LOW_QUALITY': '⚠️'
+        }
+        
+        zone_emoji = {
+            'PREMIUM': '🟢',
+            'DISCOUNT': '🔴',
+            'NEUTRAL': '🟡'
+        }
+        
+        quality_icon = quality_emoji.get(signal.quality_class, '📊')
+        zone_icon = zone_emoji.get(signal.zone_position, '🟡')
+        
+        # ✅ ENHANCED: ICT Metrics
+        ict_summary = signal.get_ict_summary() if hasattr(signal, 'get_ict_summary') else {}
         
         message = f"""
 📢 *ENTRY SIGNAL DETECTED*
 
+{quality_icon} *QUALITY*: {signal.quality_class} ({signal.quality_score}/100)
+{zone_icon} *ZONE*: {signal.zone_position}
 📌 *PAIR*: {signal.pair}
 🕒 *Time*: {timestamp}
-📊 *Bias*: {bias['direction']} ({bias['strength']})
+📊 *Bias*: {bias['direction']} ({bias['strength']:.1f})
 🧠 *Signal Strength*: {signal.strength}
 🧱 *OB + BOS Valid*: ✅
 🕳 *FVG*: ✅
-💧 *Liquidity Sweep*: ✅
+💧 *Liquidity Sweep*: {'✅' if signal.has_sweep else '❌'}
 🔥 *Displacement Candle*: ✅
 
 🎯 *ENTRY*: {signal.entry}
@@ -85,7 +107,81 @@ class TelegramBot:
 ⚖️ *Risk %*: {risk * 100:.1f}%
 💰 *Size*: {position_size}
 
-📈 *Status*: Active
+📈 *ICT ANALYSIS*:
+• VWAP Distance: {ict_summary.get('vwap_distance', 'N/A')}
+• Institutional Volume: {ict_summary.get('institutional_volume', 'N/A')}
+• BOS Strength: {getattr(signal, 'bos_strength', 'N/A')}
+• Mitigation Depth: {getattr(signal, 'mitigation_depth', 'N/A')}
+
+📊 *Status*: Active
+        """
+        
+        return self.send_message(message)
+
+    def send_ict_quality_alert(self, signal, bias):
+        """Send ICT quality analysis alert"""
+        timestamp = datetime.utcnow().strftime("%H:%M UTC")
+        
+        quality_emoji = {
+            'PREMIUM': '💎',
+            'STANDARD': '⭐',
+            'BASIC': '📊',
+            'LOW_QUALITY': '⚠️'
+        }
+        
+        quality_icon = quality_emoji.get(signal.quality_class, '📊')
+        
+        message = f"""
+{quality_icon} *ICT QUALITY ANALYSIS*
+
+📌 *PAIR*: {signal.pair}
+🕒 *Time*: {timestamp}
+📊 *Quality Score*: {signal.quality_score}/100
+🏷️ *Quality Class*: {signal.quality_class}
+🎯 *Priority*: {signal.priority}
+
+📈 *ICT METRICS*:
+• Zone Quality: {signal.ict_metrics.get('zone_quality', 0)}/25
+• Volume Quality: {signal.ict_metrics.get('volume_quality', 0)}/25
+• Signal Quality: {signal.ict_metrics.get('signal_quality', 0)}/25
+• Structure Quality: {signal.ict_metrics.get('structure_quality', 0)}/25
+
+📍 *ZONE ANALYSIS*:
+• Position: {signal.zone_position}
+• VWAP Distance: {signal.vwap_distance:.2%}
+• Institutional Volume: {signal.institutional_volume_strength:.2f}
+
+📊 *BIAS*: {bias['direction']} ({bias['strength']:.1f})
+        """
+        
+        return self.send_message(message)
+
+    def send_premium_signal_alert(self, signal, bias):
+        """Send special alert for premium signals"""
+        timestamp = datetime.utcnow().strftime("%H:%M UTC")
+        
+        message = f"""
+💎 *PREMIUM SIGNAL DETECTED* 💎
+
+📌 *PAIR*: {signal.pair}
+🕒 *Time*: {timestamp}
+📊 *Quality Score*: {signal.quality_score}/100
+🏷️ *Quality Class*: {signal.quality_class}
+🎯 *Priority*: {signal.priority}
+
+📍 *ZONE*: {signal.zone_position}
+📈 *VWAP Distance*: {signal.vwap_distance:.2%}
+💪 *Institutional Volume*: {signal.institutional_volume_strength:.2f}
+
+🎯 *ENTRY*: {signal.entry}
+🛡 *SL*: {signal.sl}
+🎯 *TP1*: {signal.tp1}
+🎯 *TP2*: {signal.tp2}
+
+📊 *BIAS*: {bias['direction']} ({bias['strength']:.1f})
+🧠 *Signal Strength*: {signal.strength}
+
+🚨 *HIGH CONFIDENCE SIGNAL*
         """
         
         return self.send_message(message)

@@ -30,6 +30,152 @@ class ICTStrategy:
             }
         }
 
+        # ✅ NEW: ICT ENHANCED FEATURES
+        self.vwap_periods = [20, 50, 200]  # Multiple VWAP timeframes
+        self.premium_discount_zones = {
+            'premium_threshold': 0.618,  # Fibonacci 0.618
+            'discount_threshold': 0.382,  # Fibonacci 0.382
+            'atr_multiplier': 0.618      # ATR multiplier for zones
+        }
+        self.institutional_volume = {
+            'std_multiplier': 2.0,       # 2x standard deviation
+            'min_volume_threshold': 1000  # Minimum volume threshold
+        }
+        self.ict_quality_scores = {
+            'premium_signal': 85,        # Premium signal threshold
+            'standard_signal': 70,       # Standard signal threshold
+            'min_quality': 60           # Minimum quality score
+        }
+
+    def calculate_vwap(self, df, period=20):
+        """Calculate Volume Weighted Average Price"""
+        try:
+            typical_price = (df['high'] + df['low'] + df['close']) / 3
+            vwap = (typical_price * df['volume']).rolling(window=period).sum() / df['volume'].rolling(window=period).sum()
+            return vwap
+        except Exception as e:
+            logger.error(f"VWAP calculation error: {e}")
+            return pd.Series([df['close'].mean()] * len(df))
+
+    def calculate_premium_discount_zones(self, df):
+        """Calculate Premium/Discount zones based on VWAP and ATR"""
+        try:
+            vwap = self.calculate_vwap(df, 20)
+            atr = self.calculate_atr(df, 14)
+            
+            premium_zone_high = vwap + (atr * self.premium_discount_zones['premium_threshold'])
+            premium_zone_low = vwap + (atr * self.premium_discount_zones['discount_threshold'])
+            discount_zone_high = vwap - (atr * self.premium_discount_zones['discount_threshold'])
+            discount_zone_low = vwap - (atr * self.premium_discount_zones['premium_threshold'])
+            
+            return {
+                'vwap': vwap,
+                'premium_zone': {'high': premium_zone_high, 'low': premium_zone_low},
+                'discount_zone': {'high': discount_zone_high, 'low': discount_zone_low},
+                'atr': atr
+            }
+        except Exception as e:
+            logger.error(f"Premium/Discount zones calculation error: {e}")
+            return None
+
+    def detect_institutional_volume(self, df):
+        """Detect institutional volume activity"""
+        try:
+            # Calculate volume moving average and standard deviation
+            volume_ma = df['volume'].rolling(window=20).mean()
+            volume_std = df['volume'].rolling(window=20).std()
+            
+            # Detect institutional volume (2x standard deviation)
+            institutional_threshold = volume_ma + (volume_std * self.institutional_volume['std_multiplier'])
+            
+            # Find institutional volume spikes
+            institutional_spikes = df['volume'] > institutional_threshold
+            
+            # Calculate institutional volume strength
+            volume_strength = (df['volume'] - volume_ma) / volume_std
+            
+            return {
+                'institutional_spikes': institutional_spikes,
+                'volume_strength': volume_strength,
+                'institutional_threshold': institutional_threshold,
+                'volume_ma': volume_ma
+            }
+        except Exception as e:
+            logger.error(f"Institutional volume detection error: {e}")
+            return None
+
+    def calculate_ict_quality_score(self, signal_data, zones_data, volume_data):
+        """Calculate ICT Quality Score (0-100)"""
+        try:
+            score = 0
+            
+            # 1. Zone Quality (25 points)
+            if zones_data:
+                current_price = signal_data.get('entry_price', 0)
+                vwap = zones_data['vwap'].iloc[-1] if not zones_data['vwap'].empty else 0
+                
+                if current_price > 0 and vwap > 0:
+                    price_vs_vwap = abs(current_price - vwap) / vwap
+                    if price_vs_vwap < 0.01:  # Very close to VWAP
+                        score += 25
+                    elif price_vs_vwap < 0.02:  # Close to VWAP
+                        score += 20
+                    elif price_vs_vwap < 0.05:  # Reasonable distance
+                        score += 15
+                    else:
+                        score += 10
+            
+            # 2. Volume Quality (25 points)
+            if volume_data:
+                volume_strength = volume_data['volume_strength'].iloc[-1] if not volume_data['volume_strength'].empty else 0
+                if volume_strength > 2.0:  # Strong institutional volume
+                    score += 25
+                elif volume_strength > 1.5:  # Good institutional volume
+                    score += 20
+                elif volume_strength > 1.0:  # Moderate institutional volume
+                    score += 15
+                else:
+                    score += 10
+            
+            # 3. Signal Strength (25 points)
+            signal_strength = signal_data.get('strength', 0)
+            if signal_strength >= 85:
+                score += 25
+            elif signal_strength >= 75:
+                score += 20
+            elif signal_strength >= 65:
+                score += 15
+            else:
+                score += 10
+            
+            # 4. Market Structure Quality (25 points)
+            structure_quality = signal_data.get('structure_quality', 0)
+            if structure_quality >= 85:
+                score += 25
+            elif structure_quality >= 75:
+                score += 20
+            elif structure_quality >= 65:
+                score += 15
+            else:
+                score += 10
+            
+            return min(score, 100)  # Cap at 100
+            
+        except Exception as e:
+            logger.error(f"ICT Quality Score calculation error: {e}")
+            return 50  # Default score
+
+    def classify_signal_quality(self, quality_score):
+        """Classify signal based on quality score"""
+        if quality_score >= self.ict_quality_scores['premium_signal']:
+            return 'PREMIUM'
+        elif quality_score >= self.ict_quality_scores['standard_signal']:
+            return 'STANDARD'
+        elif quality_score >= self.ict_quality_scores['min_quality']:
+            return 'BASIC'
+        else:
+            return 'LOW_QUALITY'
+
     def get_ohlcv(self, symbol, interval="15m", limit=200):  # Ditambah limit dari 100 ke 200
         """Get OHLCV data from Binance"""
         try:
@@ -50,6 +196,21 @@ class ICTStrategy:
             df['atr'] = self.calculate_atr(df, period=14)
             df['ema_20'] = df['close'].ewm(span=20).mean()
             df['ema_50'] = df['close'].ewm(span=50).mean()
+            
+            # ✅ NEW: ENHANCED ICT INDICATORS
+            zones_data = self.calculate_premium_discount_zones(df)
+            if zones_data:
+                df['vwap'] = zones_data['vwap']
+                df['premium_zone_high'] = zones_data['premium_zone']['high']
+                df['premium_zone_low'] = zones_data['premium_zone']['low']
+                df['discount_zone_high'] = zones_data['discount_zone']['high']
+                df['discount_zone_low'] = zones_data['discount_zone']['low']
+            
+            volume_data = self.detect_institutional_volume(df)
+            if volume_data:
+                df['institutional_spikes'] = volume_data['institutional_spikes']
+                df['volume_strength'] = volume_data['volume_strength']
+                df['institutional_threshold'] = volume_data['institutional_threshold']
             
             return df
         except Exception as e:
@@ -337,72 +498,124 @@ class ICTStrategy:
         return signals_count > 0
 
     def find_signals(self, bias, symbol):
-        """Main function untuk mencari trading signals - OPTIMIZED"""
+        """Main function untuk mencari trading signals - ENHANCED WITH ICT QUALITY"""
         try:
             signals = []
             
             # ✅ TRADING SEPANJANG HARI DENGAN PRIORITY KILLZONE
             is_killzone = self.in_killzone()
             
+            # Get enhanced data with VWAP and zones
+            df = self.get_ohlcv(symbol)
+            if df.empty:
+                return []
+            
+            # Calculate zones and volume data
+            zones_data = self.calculate_premium_discount_zones(df)
+            volume_data = self.detect_institutional_volume(df)
+            
             # Find and validate order blocks
             obs = self.find_order_blocks(symbol)
             valid_obs = self.validate_order_blocks(obs)
             
-            # ✅ PRIORITAS BERDASARKAN KUALITAS
-            priority_obs = []
-            normal_obs = []
+            # ✅ ENHANCED PRIORITY SYSTEM WITH ICT QUALITY
+            premium_signals = []
+            standard_signals = []
+            basic_signals = []
             
             for ob in valid_obs:
                 if self.validate_bos(ob) and self.check_mitigation(ob):
-                    if ob['has_sweep'] and is_killzone:
-                        priority_obs.append(ob)  # High priority
-                    else:
-                        normal_obs.append(ob)    # Normal priority
-            
-            # Create signals dari priority obs dulu
-            for ob in priority_obs:
-                signal = self.create_signal(ob, bias)
-                signal.priority = "HIGH"
-                signals.append(signal)
-                logger.info(f"HIGH PRIORITY Signal: {signal.direction} {signal.pair} @ {signal.entry}")
-            
-            # Tambah normal signals jika belum cukup
-            if len(signals) < 3:
-                for ob in normal_obs[:3-len(signals)]:
+                    # Calculate ICT Quality Score
+                    signal_data = {
+                        'entry_price': ob['entry_price'],
+                        'strength': ob['strength'],
+                        'structure_quality': ob.get('bos_strength', 70)
+                    }
+                    
+                    quality_score = self.calculate_ict_quality_score(signal_data, zones_data, volume_data)
+                    quality_class = self.classify_signal_quality(quality_score)
+                    
+                    # Enhanced signal creation with quality data
                     signal = self.create_signal(ob, bias)
-                    signal.priority = "NORMAL"
-                    signals.append(signal)
-                    logger.info(f"NORMAL Signal: {signal.direction} {signal.pair} @ {signal.entry}")
+                    signal.quality_score = quality_score
+                    signal.quality_class = quality_class
+                    signal.zones_data = zones_data
+                    signal.volume_data = volume_data
+                    
+                    # Classify based on quality and killzone
+                    if quality_class == 'PREMIUM' and is_killzone:
+                        signal.priority = "PREMIUM"
+                        premium_signals.append(signal)
+                    elif quality_class in ['PREMIUM', 'STANDARD'] and is_killzone:
+                        signal.priority = "HIGH"
+                        standard_signals.append(signal)
+                    else:
+                        signal.priority = "NORMAL"
+                        basic_signals.append(signal)
             
-            logger.info(f"Total signals generated: {len(signals)}")
+            # ✅ PRIORITY-BASED SIGNAL SELECTION
+            # Add premium signals first
+            for signal in premium_signals[:2]:  # Max 2 premium signals
+                signals.append(signal)
+                logger.info(f"PREMIUM Signal: {signal.direction} {signal.pair} @ {signal.entry} (Quality: {signal.quality_score})")
+            
+            # Add high priority signals
+            for signal in standard_signals[:3-len(signals)]:
+                signals.append(signal)
+                logger.info(f"HIGH Signal: {signal.direction} {signal.pair} @ {signal.entry} (Quality: {signal.quality_score})")
+            
+            # Add normal signals if needed
+            if len(signals) < 3:
+                for signal in basic_signals[:3-len(signals)]:
+                    signals.append(signal)
+                    logger.info(f"NORMAL Signal: {signal.direction} {signal.pair} @ {signal.entry} (Quality: {signal.quality_score})")
+            
+            logger.info(f"Total signals generated: {len(signals)} (Premium: {len(premium_signals)}, Standard: {len(standard_signals)}, Basic: {len(basic_signals)})")
             return signals
             
         except Exception as e:
-            logger.error(f"Signal finding error for {symbol}: {e}")
+            logger.error(f"Signal finding error: {e}")
             return []
 
     def create_signal(self, ob, bias):
-        """Create trading signal from Order Block"""
-        return Signal(
-            pair=ob['pair'],
-            direction="BUY" if ob['type'] == "BULLISH" else "SELL",
-            entry=ob['entry_price'],
-            sl=ob['sl_price'],
-            tp1=ob['tp1_price'],
-            tp2=ob['tp2_price'],
-            strength=ob['strength'],
-            bias=bias.get('strength', 70),
-            regime=bias.get('regime_score', 0.5),
-            volatility=bias.get('volatility', 0.3),
-            has_sweep=ob.get('has_sweep', False)
-        )
+        """Create enhanced signal with ICT quality analysis"""
+        try:
+            # Calculate volatility
+            volatility = ob['size'] / ob['entry_price'] * 100
+            
+            # Enhanced signal creation
+            signal = Signal(
+                pair=ob['pair'],
+                direction=ob['type'],
+                entry=ob['entry_price'],
+                sl=ob['sl_price'],
+                tp1=ob['tp1_price'],
+                tp2=ob['tp2_price'],
+                strength=ob['strength'],
+                bias=bias['strength'],
+                regime=bias['regime'],
+                volatility=volatility,
+                has_sweep=ob['has_sweep']
+            )
+            
+            # Add enhanced ICT data
+            signal.ob_data = ob
+            signal.created_at = ob['created_at']
+            signal.bos_strength = ob.get('bos_strength', 70)
+            signal.mitigation_depth = ob.get('mitigation_depth', 0.5)
+            
+            return signal
+            
+        except Exception as e:
+            logger.error(f"Signal creation error: {e}")
+            return None
 
 
 class Signal:
     def __init__(self, pair, direction, entry, sl, tp1, tp2,
                  strength, bias, regime, volatility, has_sweep=False):
         self.pair = pair
-        self.direction = direction
+        self.direction = "BUY" if direction == "BULLISH" else "SELL"
         self.entry = entry
         self.sl = sl
         self.tp1 = tp1
@@ -412,11 +625,33 @@ class Signal:
         self.regime = regime
         self.volatility = volatility
         self.has_sweep = has_sweep
-        self.priority = "NORMAL"  # Default priority
-        self.created_at = datetime.utcnow()
+        
+        # ✅ NEW: ICT ENHANCED ATTRIBUTES
+        self.quality_score = 0
+        self.quality_class = "BASIC"
+        self.priority = "NORMAL"
+        self.zones_data = None
+        self.volume_data = None
+        self.ob_data = None
+        self.created_at = None
+        self.bos_strength = 70
+        self.mitigation_depth = 0.5
+        
+        # ✅ NEW: PREMIUM/DISCOUNT ZONE INFO
+        self.zone_position = "NEUTRAL"  # PREMIUM, DISCOUNT, NEUTRAL
+        self.vwap_distance = 0.0
+        self.institutional_volume_strength = 0.0
+        
+        # ✅ NEW: ICT QUALITY METRICS
+        self.ict_metrics = {
+            'zone_quality': 0,
+            'volume_quality': 0,
+            'signal_quality': 0,
+            'structure_quality': 0
+        }
 
     def __str__(self):
-        return f"Signal({self.direction} {self.pair} @ {self.entry}, SL: {self.sl}, TP1: {self.tp1}, TP2: {self.tp2}, Priority: {self.priority})"
+        return f"{self.direction} {self.pair} @ {self.entry} (Quality: {self.quality_score}, Class: {self.quality_class})"
 
     def to_dict(self):
         return {
@@ -431,13 +666,89 @@ class Signal:
             'regime': self.regime,
             'volatility': self.volatility,
             'has_sweep': self.has_sweep,
+            # ✅ NEW: ICT ENHANCED DATA
+            'quality_score': self.quality_score,
+            'quality_class': self.quality_class,
             'priority': self.priority,
-            'created_at': self.created_at.isoformat()
+            'zone_position': self.zone_position,
+            'vwap_distance': self.vwap_distance,
+            'institutional_volume_strength': self.institutional_volume_strength,
+            'ict_metrics': self.ict_metrics
         }
 
     def validate_levels(self):
-        """Validate that SL and TP levels make sense"""
-        if self.direction == "BUY":
-            return (self.sl < self.entry < self.tp1 < self.tp2)
-        else:  # SELL
-            return (self.sl > self.entry > self.tp1 > self.tp2)
+        """Enhanced validation with ICT quality checks"""
+        try:
+            # Basic validation
+            if self.entry <= 0 or self.sl <= 0 or self.tp1 <= 0 or self.tp2 <= 0:
+                return False
+            
+            # Direction-based validation
+            if self.direction == "BUY":
+                if not (self.sl < self.entry < self.tp1 < self.tp2):
+                    return False
+            else:  # SELL
+                if not (self.tp2 < self.tp1 < self.entry < self.sl):
+                    return False
+            
+            # ✅ NEW: ICT QUALITY VALIDATION
+            if self.quality_score < 60:
+                logger.warning(f"Low quality signal: {self.quality_score}")
+                return False
+            
+            # Zone validation
+            if self.zone_position == "NEUTRAL" and self.quality_class == "PREMIUM":
+                logger.warning("Premium signal should have zone position")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Signal validation error: {e}")
+            return False
+
+    def update_zone_info(self, zones_data, volume_data):
+        """Update signal with zone and volume information"""
+        try:
+            if zones_data and volume_data:
+                current_price = self.entry
+                vwap = zones_data['vwap'].iloc[-1] if not zones_data['vwap'].empty else 0
+                
+                # Calculate VWAP distance
+                if vwap > 0:
+                    self.vwap_distance = abs(current_price - vwap) / vwap
+                
+                # Determine zone position
+                if not zones_data['premium_zone']['high'].empty and not zones_data['premium_zone']['low'].empty:
+                    premium_high = zones_data['premium_zone']['high'].iloc[-1]
+                    premium_low = zones_data['premium_zone']['low'].iloc[-1]
+                    
+                    if premium_low <= current_price <= premium_high:
+                        self.zone_position = "PREMIUM"
+                    elif not zones_data['discount_zone']['high'].empty and not zones_data['discount_zone']['low'].empty:
+                        discount_high = zones_data['discount_zone']['high'].iloc[-1]
+                        discount_low = zones_data['discount_zone']['low'].iloc[-1]
+                        
+                        if discount_low <= current_price <= discount_high:
+                            self.zone_position = "DISCOUNT"
+                        else:
+                            self.zone_position = "NEUTRAL"
+                
+                # Update institutional volume strength
+                if not volume_data['volume_strength'].empty:
+                    self.institutional_volume_strength = volume_data['volume_strength'].iloc[-1]
+                
+        except Exception as e:
+            logger.error(f"Zone info update error: {e}")
+
+    def get_ict_summary(self):
+        """Get ICT analysis summary"""
+        return {
+            'quality_score': self.quality_score,
+            'quality_class': self.quality_class,
+            'priority': self.priority,
+            'zone_position': self.zone_position,
+            'vwap_distance': f"{self.vwap_distance:.2%}",
+            'institutional_volume': f"{self.institutional_volume_strength:.2f}",
+            'ict_metrics': self.ict_metrics
+        }

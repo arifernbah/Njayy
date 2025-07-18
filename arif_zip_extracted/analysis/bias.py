@@ -23,7 +23,127 @@ class BiasAnalyzer:
             "momentum": 0.1
         }
 
+        # ✅ NEW: ICT ENHANCED FEATURES
+        self.ict_enhancements = {
+            'vwap_analysis': True,
+            'institutional_volume': True,
+            'premium_discount_zones': True,
+            'enhanced_structure': True
+        }
+        
+        self.vwap_periods = [20, 50, 200]
+        self.institutional_threshold = 2.0  # 2x standard deviation
+
         self.client = Client(api_key=config.BINANCE_API_KEY, api_secret=config.BINANCE_SECRET)
+
+    def calculate_vwap(self, df, period=20):
+        """Calculate Volume Weighted Average Price"""
+        try:
+            typical_price = (df['high'] + df['low'] + df['close']) / 3
+            vwap = (typical_price * df['volume']).rolling(window=period).sum() / df['volume'].rolling(window=period).sum()
+            return vwap
+        except Exception as e:
+            logger.error(f"VWAP calculation error: {e}")
+            return pd.Series([df['close'].mean()] * len(df))
+
+    def detect_institutional_volume(self, df):
+        """Detect institutional volume activity"""
+        try:
+            volume_ma = df['volume'].rolling(window=20).mean()
+            volume_std = df['volume'].rolling(window=20).std()
+            institutional_threshold = volume_ma + (volume_std * self.institutional_threshold)
+            
+            institutional_spikes = df['volume'] > institutional_threshold
+            volume_strength = (df['volume'] - volume_ma) / volume_std
+            
+            return {
+                'institutional_spikes': institutional_spikes,
+                'volume_strength': volume_strength,
+                'institutional_threshold': institutional_threshold
+            }
+        except Exception as e:
+            logger.error(f"Institutional volume detection error: {e}")
+            return None
+
+    def analyze_premium_discount_zones(self, df):
+        """Analyze premium/discount zones based on VWAP"""
+        try:
+            vwap = self.calculate_vwap(df, 20)
+            atr = self.calculate_atr(df, 14)
+            
+            premium_zone_high = vwap + (atr * 0.618)
+            premium_zone_low = vwap + (atr * 0.382)
+            discount_zone_high = vwap - (atr * 0.382)
+            discount_zone_low = vwap - (atr * 0.618)
+            
+            current_price = df['close'].iloc[-1]
+            
+            # Determine zone position
+            if premium_zone_low.iloc[-1] <= current_price <= premium_zone_high.iloc[-1]:
+                zone_position = "PREMIUM"
+                zone_score = 80  # Higher score for premium zone
+            elif discount_zone_low.iloc[-1] <= current_price <= discount_zone_high.iloc[-1]:
+                zone_position = "DISCOUNT"
+                zone_score = 70  # Good score for discount zone
+            else:
+                zone_position = "NEUTRAL"
+                zone_score = 50  # Neutral score
+            
+            return {
+                'zone_position': zone_position,
+                'zone_score': zone_score,
+                'vwap': vwap.iloc[-1],
+                'distance_from_vwap': abs(current_price - vwap.iloc[-1]) / vwap.iloc[-1]
+            }
+        except Exception as e:
+            logger.error(f"Premium/Discount zones analysis error: {e}")
+            return {'zone_position': 'NEUTRAL', 'zone_score': 50, 'vwap': 0, 'distance_from_vwap': 0}
+
+    def calculate_atr(self, df, period=14):
+        """Calculate Average True Range"""
+        try:
+            high_low = df['high'] - df['low']
+            high_close = np.abs(df['high'] - df['close'].shift())
+            low_close = np.abs(df['low'] - df['close'].shift())
+            
+            true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+            return true_range.rolling(window=period).mean()
+        except:
+            return pd.Series([0.001] * len(df))
+
+    def analyze_enhanced_structure(self, df):
+        """Enhanced market structure analysis with ICT concepts"""
+        try:
+            if len(df) < 10:
+                return 50
+            
+            # Basic structure analysis
+            bullish_candles = (df['close'] > df['open']).sum()
+            total_candles = len(df)
+            bullish_percentage = (bullish_candles / total_candles) * 100
+            
+            # Enhanced structure with VWAP
+            vwap = self.calculate_vwap(df, 20)
+            price_vs_vwap = df['close'].iloc[-1] > vwap.iloc[-1]
+            
+            # Higher highs and higher lows analysis
+            highs = df['high'].rolling(window=3).max()
+            lows = df['low'].rolling(window=3).min()
+            
+            higher_highs = (highs.diff() > 0).sum()
+            higher_lows = (lows.diff() > 0).sum()
+            
+            structure_score = ((higher_highs + higher_lows) / len(highs.dropna())) * 100
+            
+            # VWAP-based structure bonus
+            vwap_bonus = 10 if price_vs_vwap else -10
+            
+            enhanced_score = (bullish_percentage * 0.4 + structure_score * 0.4 + vwap_bonus * 0.2)
+            return min(100, max(0, enhanced_score))
+            
+        except Exception as e:
+            logger.error(f"Enhanced structure analysis error: {e}")
+            return 50
 
     def get_market_data(self, interval, symbol):
         """Fetch historical OHLCV data from Binance Futures"""
@@ -55,6 +175,16 @@ class BiasAnalyzer:
             df['close'] = df['close'].astype(float)
             df['volume'] = df['volume'].astype(float)
             
+            # ✅ NEW: Add ICT indicators
+            if self.ict_enhancements['vwap_analysis']:
+                df['vwap'] = self.calculate_vwap(df, 20)
+            
+            if self.ict_enhancements['institutional_volume']:
+                volume_data = self.detect_institutional_volume(df)
+                if volume_data:
+                    df['institutional_spikes'] = volume_data['institutional_spikes']
+                    df['volume_strength'] = volume_data['volume_strength']
+            
             return df
             
         except Exception as e:
@@ -62,7 +192,7 @@ class BiasAnalyzer:
             return pd.DataFrame()
 
     def analyze_bias(self, symbol):
-        """Analyze overall bias across timeframes"""
+        """Analyze overall bias across timeframes with ICT enhancements"""
         try:
             # ✅ Fixed: Pass symbol parameter to get_market_data
             daily_data = self.get_market_data("Daily", symbol)
@@ -73,9 +203,10 @@ class BiasAnalyzer:
                 logger.warning(f"Insufficient data for bias analysis: {symbol}")
                 return {"valid": False, "symbol": symbol}
 
-            daily_score = self.analyze_timeframe(daily_data)
-            h4_score = self.analyze_timeframe(h4_data)
-            h1_score = self.analyze_timeframe(h1_data)
+            # ✅ ENHANCED ANALYSIS WITH ICT FEATURES
+            daily_score = self.analyze_timeframe_enhanced(daily_data)
+            h4_score = self.analyze_timeframe_enhanced(h4_data)
+            h1_score = self.analyze_timeframe_enhanced(h1_data)
 
             # ✅ Calculate weighted overall bias
             overall_bias = (
@@ -86,6 +217,10 @@ class BiasAnalyzer:
 
             regime = self.analyze_regime(daily_data)
             volatility = self.calculate_volatility(h1_data)
+            
+            # ✅ NEW: ICT ENHANCED FEATURES
+            zones_analysis = self.analyze_premium_discount_zones(daily_data)
+            institutional_volume = self.detect_institutional_volume(daily_data)
 
             # ✅ Determine bias direction
             direction = "BULLISH" if overall_bias > 50 else "BEARISH"
@@ -103,7 +238,11 @@ class BiasAnalyzer:
                     'daily': daily_score,
                     '4h': h4_score,
                     '1h': h1_score
-                }
+                },
+                # ✅ NEW: ICT ENHANCED DATA
+                'zones_analysis': zones_analysis,
+                'institutional_volume': institutional_volume,
+                'ict_enhanced': True
             }
 
         except Exception as e:
@@ -321,6 +460,86 @@ class BiasAnalyzer:
             
         except Exception as e:
             logger.error(f"Volatility calculation error: {e}")
+            return 0
+
+    def analyze_volume_enhanced(self, df):
+        """Enhanced volume analysis with institutional detection"""
+        try:
+            if len(df) < 20:
+                return 50
+                
+            vol = df['volume']
+            if vol.empty:
+                return 50
+                
+            # Basic volume analysis
+            recent_volume = vol.iloc[-5:].mean()
+            avg_volume = vol.rolling(window=20).mean().iloc[-1]
+            
+            if pd.isna(recent_volume) or pd.isna(avg_volume) or avg_volume == 0:
+                return 50
+                
+            volume_ratio = recent_volume / avg_volume
+            
+            # ✅ ENHANCED: Institutional volume detection
+            institutional_bonus = 0
+            if 'volume_strength' in df.columns:
+                current_volume_strength = df['volume_strength'].iloc[-1]
+                if current_volume_strength > 2.0:  # Strong institutional activity
+                    institutional_bonus = 20
+                elif current_volume_strength > 1.5:  # Moderate institutional activity
+                    institutional_bonus = 10
+            
+            # ✅ ENHANCED: VWAP-based volume analysis
+            vwap_bonus = 0
+            if 'vwap' in df.columns:
+                current_price = df['close'].iloc[-1]
+                vwap = df['vwap'].iloc[-1]
+                if abs(current_price - vwap) / vwap < 0.01:  # Close to VWAP
+                    vwap_bonus = 10
+            
+            # Calculate enhanced score
+            base_score = 0
+            if volume_ratio > 1.5:
+                base_score = 100
+            elif volume_ratio > 1.2:
+                base_score = 80
+            elif volume_ratio > 1.0:
+                base_score = 60
+            elif volume_ratio > 0.8:
+                base_score = 40
+            else:
+                base_score = 20
+            
+            enhanced_score = min(100, base_score + institutional_bonus + vwap_bonus)
+            return enhanced_score
+                
+        except Exception as e:
+            logger.error(f"Enhanced volume analysis error: {e}")
+            return 50
+
+    def analyze_timeframe_enhanced(self, df):
+        """Enhanced timeframe analysis with ICT concepts"""
+        try:
+            if df.empty or len(df) < 20:
+                return 0
+                
+            trend = self.analyze_trend(df)
+            structure = self.analyze_enhanced_structure(df)  # Use enhanced structure
+            volume = self.analyze_volume_enhanced(df)  # Use enhanced volume
+            momentum = self.analyze_momentum(df)
+
+            score = (
+                trend * self.bias_factors['trend_strength'] +
+                structure * self.bias_factors['structure'] +
+                volume * self.bias_factors['volume'] +
+                momentum * self.bias_factors['momentum']
+            )
+            
+            return min(100, max(0, score))  # ✅ Ensure score is between 0-100
+            
+        except Exception as e:
+            logger.error(f"Enhanced timeframe analysis error: {e}")
             return 0
 
     def get_bias_summary(self, symbol):
