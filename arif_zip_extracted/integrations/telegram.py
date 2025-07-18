@@ -279,6 +279,27 @@ class TelegramBot:
         
         return self.send_message(message)
 
+    def send_main_menu(self):
+        """Send custom keyboard with main menu commands"""
+        keyboard = {
+            "keyboard": [
+                [{"text": "/status"}, {"text": "/balance"}],
+                [{"text": "/drawdown"}, {"text": "/help"}, {"text": "/shutdown"}]
+            ],
+            "resize_keyboard": True,
+            "one_time_keyboard": False
+        }
+        payload = {
+            'chat_id': self.chat_id,
+            'text': "Pilih menu:",
+            'reply_markup': keyboard
+        }
+        url = f"{self.base_url}/sendMessage"
+        try:
+            requests.post(url, json=payload, timeout=10)
+        except Exception as e:
+            logger.error(f"Failed to send main menu: {e}")
+
     def poll_messages(self, timeout=30):
         """Poll for new messages using getUpdates"""
         url = f"{self.base_url}/getUpdates"

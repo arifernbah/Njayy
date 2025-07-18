@@ -209,6 +209,7 @@ class ICTBot:
                 f"Status: Bot aktif & siap trading!"
             )
             telegram.send_message(msg)
+            telegram.send_main_menu()  # Show main menu keyboard after startup
         except Exception as e:
             logger.error(f"Startup message error: {e}")
 
@@ -255,6 +256,7 @@ if __name__ == "__main__":
 
 Perintah lanjutan dapat ditambahkan nanti seperti /summary, /pause, dll.
 """)
+            telegram.send_main_menu()  # Show main menu keyboard on /help
         elif text == "/shutdown":
             telegram.send_message("🛑 Bot akan dimatikan...")
             exit(0)
