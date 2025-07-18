@@ -573,7 +573,11 @@ class EnhancedICTTrader:
             entry_order = self.place_market_order_enhanced(side, position_size)
             if not entry_order:
                 logger.error("Failed to place entry order")
+                telegram.send_message(f"❌ ENTRY FAILED! Order market tidak masuk ke Binance untuk {self.symbol}.")
                 return False
+            # Ambil harga entry/orderId real dari respons Binance
+            entry_price_real = safe_get(entry_order, 'avgFillPrice', default=safe_get(entry_order, 'price', default=signal.entry))
+            order_id = safe_get(entry_order, 'orderId', default='N/A')
             # 2. Place STOP_MARKET for SL (cek dulu, cancel jika sudah ada)
             sl_order = None
             if 'orders' in entry_order and entry_order['orders'].get('sl_order'):
@@ -601,9 +605,10 @@ class EnhancedICTTrader:
             # Enhanced telegram notification
             telegram.send_message(
                 f"🚀 *ENTRY EXECUTED*\n"
+                f"Order ID: {order_id}\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"🎯 Direction: {signal.direction}\n"
-                f"💰 Entry: ${signal.entry:.2f}\n"
+                f"💰 Entry (real): ${entry_price_real}\n"
                 f"🛑 SL: ${signal.sl:.2f}\n"
                 f"🎯 TP1: ${signal.tp1:.2f}\n"
                 f"🎯 TP2: ${signal.tp2:.2f}\n"
