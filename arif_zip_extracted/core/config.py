@@ -14,6 +14,16 @@ class Config:
         self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
         self.TELEGRAM_CHAT_ID = os.getenv('TELEGRAM_CHAT_ID')
         
+        # Binance API Endpoints - with fallback for blocked regions
+        self.BINANCE_ENDPOINTS = [
+            "https://fapi.binance.com",           # Main endpoint
+            "https://testnet.binancefuture.com",  # Testnet endpoint (working)
+            "https://api.binance.com",            # Alternative endpoint
+        ]
+        
+        # Test and set working endpoint
+        self.BINANCE_BASE_URL = self._get_working_endpoint()
+        
         # Bluechip/major coin list (bukan shitcoin)
         self.BLUECHIP_BASE_ASSETS = [
             'BTC','ETH','BNB','SOL','ADA','XRP','DOGE','LINK','AVAX','MATIC','DOT','LTC','TRX','OP','ARB','BCH','UNI','ETC','FIL','APT','ATOM','NEAR','XLM','SUI','INJ','RNDR','PEPE','TIA','SEI','JTO','WIF','STX','DYDX','BLUR','APE','GRT','AAVE','SNX','SAND','MKR','RUNE','LDO','IMX','FTM','FLOW','GMT','COMP','CRV','ALGO','EOS','CRO','XTZ','ZIL','ENJ','KAVA','1INCH','BAND','BAT','CHZ','CVC','DASH','DGB','ICX','IOST','KNC','MANA','NKN','OCEAN','ONT','QTUM','SC','SKL','SRM','STMX','STPT','SXP','TOMO','VET','VTHO','WAVES','XEM','XMR','ZEC','ZEN','ZRX'
@@ -29,7 +39,7 @@ class Config:
         
         if self.USE_TOP_VOLUME_PAIRS:
             try:
-                url = 'https://fapi.binance.com/fapi/v1/ticker/24hr'
+                url = f'{self.BINANCE_BASE_URL}/fapi/v1/ticker/24hr'
                 resp = requests.get(url, timeout=10)
                 data = resp.json()
                 # Filter USDT pairs only
@@ -95,6 +105,24 @@ class Config:
         
         # Validate critical settings
         self._validate_config()
+    
+    def _get_working_endpoint(self):
+        """Test and return the first working Binance endpoint"""
+        for endpoint in self.BINANCE_ENDPOINTS:
+            try:
+                print(f"Testing endpoint: {endpoint}")
+                response = requests.get(f"{endpoint}/fapi/v1/ping", timeout=10)
+                if response.status_code == 200:
+                    print(f"✅ Using endpoint: {endpoint}")
+                    return endpoint
+                else:
+                    print(f"❌ Endpoint {endpoint} failed: HTTP {response.status_code}")
+            except Exception as e:
+                print(f"❌ Endpoint {endpoint} error: {e}")
+        
+        # If all fail, use testnet as fallback
+        print("⚠️ All endpoints failed, using testnet as fallback")
+        return "https://testnet.binancefuture.com"
     
     def _validate_config(self):
         """Validate critical configuration settings"""
@@ -191,6 +219,10 @@ class Config:
             'count': self.TOP_VOLUME_COUNT,
             'timeframe': self.VOLUME_TIMEFRAME
         }
+    
+    def get_binance_endpoint(self):
+        """Get the working Binance endpoint"""
+        return self.BINANCE_BASE_URL
 
 # Create global config instance
 config = Config()

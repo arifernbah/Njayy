@@ -14,7 +14,21 @@ import time
 
 class EnhancedICTTrader:
     def __init__(self):
+        # Initialize client with configurable endpoint
         self.client = Client(api_key=config.BINANCE_API_KEY, api_secret=config.BINANCE_SECRET)
+        
+        # Set the base URL for the client
+        if hasattr(config, 'BINANCE_BASE_URL') and config.BINANCE_BASE_URL:
+            # Override the default URLs for the client
+            if 'testnet' in config.BINANCE_BASE_URL:
+                self.client.API_URL = config.BINANCE_BASE_URL + '/fapi'
+                self.client.FUTURES_URL = config.BINANCE_BASE_URL + '/fapi'
+                print(f"🔧 Using testnet endpoint: {config.BINANCE_BASE_URL}")
+            else:
+                self.client.API_URL = config.BINANCE_BASE_URL + '/fapi'
+                self.client.FUTURES_URL = config.BINANCE_BASE_URL + '/fapi'
+                print(f"🔧 Using endpoint: {config.BINANCE_BASE_URL}")
+        
         self.symbol = "BTCUSDT"  # Default symbol, tetap bisa diubah untuk multi-pair
         self.active_positions = {}
         self.daily_trades = 0
@@ -46,7 +60,11 @@ class EnhancedICTTrader:
         self.ws_prices = {}  # Store real-time prices
         self.ws_connected = False
         self.ws_thread = None
-        self.ws_url = "wss://fstream.binance.com/ws/"
+        # Use configurable WebSocket URL
+        if hasattr(config, 'BINANCE_BASE_URL') and 'testnet' in config.BINANCE_BASE_URL:
+            self.ws_url = "wss://stream.binancefuture.com/ws/"  # Testnet WebSocket
+        else:
+            self.ws_url = "wss://fstream.binance.com/ws/"  # Main WebSocket
         
         # Start WebSocket connection
         self.start_websocket()
