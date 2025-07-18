@@ -66,7 +66,7 @@ class ICTBot:
                             'volume': float(safe_get(kline, 'v', default=0)),
                             'close_time': safe_get(kline, 'T', default=0)
                         }
-                        self.strategy.on_new_candle(symbol, candle)
+                        self.strategy.on_new_candle(symbol, candle, self.analyzer)
                         # Bisa tambahkan trigger analisis/eksekusi di sini
 
     def start(self):

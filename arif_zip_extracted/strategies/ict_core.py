@@ -629,7 +629,7 @@ class ICTStrategy:
         if not df.empty:
             self.ohlcv_data[symbol] = df
 
-    def on_new_candle(self, symbol, candle):
+    def on_new_candle(self, symbol, candle, analyzer):
         import pandas as pd
         from execution.trader import EnhancedICTTrader
         # Inisialisasi data historis jika belum ada
@@ -644,7 +644,7 @@ class ICTStrategy:
         self.ohlcv_data[symbol] = df
         # Jalankan analisis sinyal jika cukup data
         if len(df) >= 50:
-            bias = self.analyzer.analyze_bias(symbol)
+            bias = analyzer.analyze_bias(symbol)
             if not bias or 'strength' not in bias or 'regime' not in bias:
                 logger.warning(f"[BIAS] Skip signal analysis for {symbol}: bias is None atau key hilang. Data candle: {len(df)} bar.")
                 return
