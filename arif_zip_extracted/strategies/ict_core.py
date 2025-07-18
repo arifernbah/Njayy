@@ -584,9 +584,12 @@ class ICTStrategy:
     def create_signal(self, ob, bias):
         """Create enhanced signal with ICT quality analysis"""
         try:
+            # Cek bias valid
+            if not bias or 'strength' not in bias or 'regime' not in bias:
+                logger.error("Signal creation error: bias is None or missing keys")
+                return None
             # Calculate volatility
             volatility = ob['size'] / ob['entry_price'] * 100
-            
             # Enhanced signal creation
             signal = Signal(
                 pair=ob['pair'],
@@ -601,15 +604,12 @@ class ICTStrategy:
                 volatility=volatility,
                 has_sweep=ob['has_sweep']
             )
-            
             # Add enhanced ICT data
             signal.ob_data = ob
             signal.created_at = ob['created_at']
             signal.bos_strength = ob.get('bos_strength', 70)
             signal.mitigation_depth = ob.get('mitigation_depth', 0.5)
-            
             return signal
-            
         except Exception as e:
             logger.error(f"Signal creation error: {e}")
             return None
