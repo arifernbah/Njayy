@@ -46,28 +46,30 @@ class ICTBot:
     async def websocket_candle_handler(self):
         """Websocket handler untuk menerima candle close dari Binance dan trigger strategi secara real-time."""
         client = await AsyncClient.create(config.BINANCE_API_KEY, config.BINANCE_API_SECRET)
-        bm = BinanceSocketManager(client)
-        interval = self.default_interval.lower()
-        streams = [f"{pair.lower()}@kline_{interval}" for pair in self.trading_pairs]
-        multi_stream = bm.multiplex_socket(streams)
-        async with multi_stream as stream:
-            while True:
-                res = await stream.recv()
-                if res and 'data' in res and 'k' in res['data']:
-                    kline = res['data']['k']
-                    if safe_get(kline, 'x', default=False):  # Hanya proses saat candle close
-                        symbol = safe_get(res, 'data', 's', default='')
-                        candle = {
-                            'timestamp': safe_get(kline, 't', default=0),
-                            'open': float(safe_get(kline, 'o', default=0)),
-                            'high': float(safe_get(kline, 'h', default=0)),
-                            'low': float(safe_get(kline, 'l', default=0)),
-                            'close': float(safe_get(kline, 'c', default=0)),
-                            'volume': float(safe_get(kline, 'v', default=0)),
-                            'close_time': safe_get(kline, 'T', default=0)
-                        }
-                        self.strategy.on_new_candle(symbol, candle, self.analyzer)
-                        # Bisa tambahkan trigger analisis/eksekusi di sini
+        try:
+            bm = BinanceSocketManager(client)
+            interval = self.default_interval.lower()
+            streams = [f"{pair.lower()}@kline_{interval}" for pair in self.trading_pairs]
+            multi_stream = bm.multiplex_socket(streams)
+            async with multi_stream as stream:
+                while True:
+                    res = await stream.recv()
+                    if res and 'data' in res and 'k' in res['data']:
+                        kline = res['data']['k']
+                        if safe_get(kline, 'x', default=False):  # Hanya proses saat candle close
+                            symbol = safe_get(res, 'data', 's', default='')
+                            candle = {
+                                'timestamp': safe_get(kline, 't', default=0),
+                                'open': float(safe_get(kline, 'o', default=0)),
+                                'high': float(safe_get(kline, 'h', default=0)),
+                                'low': float(safe_get(kline, 'l', default=0)),
+                                'close': float(safe_get(kline, 'c', default=0)),
+                                'volume': float(safe_get(kline, 'v', default=0)),
+                                'close_time': safe_get(kline, 'T', default=0)
+                            }
+                            self.strategy.on_new_candle(symbol, candle, self.analyzer)
+        finally:
+            await client.close()
 
     def start(self):
         """Initialize and start the bot (websocket version)"""
