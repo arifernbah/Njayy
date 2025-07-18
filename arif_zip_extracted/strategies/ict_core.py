@@ -5,6 +5,13 @@ from core.config import config
 import pandas as pd
 import numpy as np
 
+def safe_get(d, *keys, default=None):
+    for k in keys:
+        if not isinstance(d, dict) or k not in d:
+            return default
+        d = d[k]
+    return d
+
 class ICTStrategy:
     def __init__(self):
         self.client = Client(api_key=config.BINANCE_API_KEY, api_secret=config.BINANCE_SECRET)
@@ -114,7 +121,7 @@ class ICTStrategy:
             # 1. Zone Quality (25 points)
             if zones_data:
                 current_price = signal_data.get('entry_price', 0)
-                vwap = zones_data['vwap'].iloc[-1] if not zones_data['vwap'].empty else 0
+                vwap = safe_get(zones_data, 'vwap', default=pd.Series()).iloc[-1] if not safe_get(zones_data, 'vwap', default=pd.Series()).empty else 0
                 
                 if current_price > 0 and vwap > 0:
                     price_vs_vwap = abs(current_price - vwap) / vwap
@@ -129,7 +136,7 @@ class ICTStrategy:
             
             # 2. Volume Quality (25 points)
             if volume_data:
-                volume_strength = volume_data['volume_strength'].iloc[-1] if not volume_data['volume_strength'].empty else 0
+                volume_strength = safe_get(volume_data, 'volume_strength', default=pd.Series()).iloc[-1] if not safe_get(volume_data, 'volume_strength', default=pd.Series()).empty else 0
                 if volume_strength > 2.0:  # Strong institutional volume
                     score += 25
                 elif volume_strength > 1.5:  # Good institutional volume
@@ -745,22 +752,22 @@ class Signal:
         try:
             if zones_data and volume_data:
                 current_price = self.entry
-                vwap = zones_data['vwap'].iloc[-1] if not zones_data['vwap'].empty else 0
+                vwap = safe_get(zones_data, 'vwap', default=pd.Series()).iloc[-1] if not safe_get(zones_data, 'vwap', default=pd.Series()).empty else 0
                 
                 # Calculate VWAP distance
                 if vwap > 0:
                     self.vwap_distance = abs(current_price - vwap) / vwap
                 
                 # Determine zone position
-                if not zones_data['premium_zone']['high'].empty and not zones_data['premium_zone']['low'].empty:
-                    premium_high = zones_data['premium_zone']['high'].iloc[-1]
-                    premium_low = zones_data['premium_zone']['low'].iloc[-1]
+                if not safe_get(zones_data, 'premium_zone', default={})['high'].empty and not safe_get(zones_data, 'premium_zone', default={})['low'].empty:
+                    premium_high = safe_get(zones_data, 'premium_zone', default={})['high'].iloc[-1]
+                    premium_low = safe_get(zones_data, 'premium_zone', default={})['low'].iloc[-1]
                     
                     if premium_low <= current_price <= premium_high:
                         self.zone_position = "PREMIUM"
-                    elif not zones_data['discount_zone']['high'].empty and not zones_data['discount_zone']['low'].empty:
-                        discount_high = zones_data['discount_zone']['high'].iloc[-1]
-                        discount_low = zones_data['discount_zone']['low'].iloc[-1]
+                    elif not safe_get(zones_data, 'discount_zone', default={})['high'].empty and not safe_get(zones_data, 'discount_zone', default={})['low'].empty:
+                        discount_high = safe_get(zones_data, 'discount_zone', default={})['high'].iloc[-1]
+                        discount_low = safe_get(zones_data, 'discount_zone', default={})['low'].iloc[-1]
                         
                         if discount_low <= current_price <= discount_high:
                             self.zone_position = "DISCOUNT"
@@ -768,8 +775,8 @@ class Signal:
                             self.zone_position = "NEUTRAL"
                 
                 # Update institutional volume strength
-                if not volume_data['volume_strength'].empty:
-                    self.institutional_volume_strength = volume_data['volume_strength'].iloc[-1]
+                if not safe_get(volume_data, 'volume_strength', default=pd.Series()).empty:
+                    self.institutional_volume_strength = safe_get(volume_data, 'volume_strength', default=pd.Series()).iloc[-1]
                 
         except Exception as e:
             logger.error(f"Zone info update error: {e}")
