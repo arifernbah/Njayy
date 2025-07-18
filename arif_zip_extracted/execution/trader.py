@@ -48,8 +48,7 @@ class EnhancedICTTrader:
 
         # Restore open positions from Binance Futures
         try:
-            logger.info("[INIT] Waiting 30 seconds before restoring open positions...")
-            time.sleep(30)
+            logger.info("[INIT] Restoring open positions...")
             try:
                 open_positions = self.client.futures_position_information()
             except Exception as e:
