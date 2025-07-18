@@ -47,6 +47,8 @@ class ICTStrategy:
             'min_quality': 60           # Minimum quality score
         }
 
+        self.ohlcv_data = {}  # Simpan data OHLCV per symbol
+
     def calculate_vwap(self, df, period=20):
         """Calculate Volume Weighted Average Price"""
         try:
@@ -612,8 +614,29 @@ class ICTStrategy:
 
     def on_new_candle(self, symbol, candle):
         """Handler untuk candle baru dari websocket. Akan dipanggil setiap ada candle close baru."""
-        # TODO: Proses candle baru, update DataFrame, dan jalankan analisis sinyal
-        pass
+        import pandas as pd
+        # Update rolling DataFrame OHLCV
+        if symbol not in self.ohlcv_data:
+            self.ohlcv_data[symbol] = pd.DataFrame(columns=['timestamp','open','high','low','close','volume','close_time'])
+        df = self.ohlcv_data[symbol]
+        new_row = pd.DataFrame([candle])
+        df = pd.concat([df, new_row], ignore_index=True)
+        # Jaga rolling window (misal 200 bar)
+        if len(df) > 200:
+            df = df.iloc[-200:]
+        self.ohlcv_data[symbol] = df
+        # Jalankan analisis sinyal jika cukup data
+        if len(df) >= 50:
+            # Gunakan df terbaru untuk analisis
+            # (Bisa panggil find_signals atau logika lain sesuai strategi)
+            # Contoh:
+            bias = None  # Bias bisa diambil dari analyzer jika perlu
+            signals = self.find_signals(bias, symbol)
+            # Eksekusi sinyal jika ada
+            if signals:
+                for signal in signals:
+                    # Validasi dan eksekusi (bisa diintegrasikan ke bot/trader)
+                    pass  # TODO: Integrasi ke eksekusi order
 
 
 class Signal:

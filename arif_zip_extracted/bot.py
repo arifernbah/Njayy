@@ -7,6 +7,8 @@ from strategies.ict_core import ICTStrategy
 from execution.trader import EnhancedICTTrader
 from analysis.bias import BiasAnalyzer
 import os
+from binance import AsyncClient, BinanceSocketManager
+import asyncio
 
 class ICTBot:
     def __init__(self):
@@ -34,17 +36,38 @@ class ICTBot:
         self.trading_pairs = config.TRADING_PAIRS
         self.default_interval = config.DEFAULT_INTERVAL  # Tambah baris ini
 
-    def start(self):
-        """Initialize and start the bot"""
-        try:
-            logger.info("Starting ICT Bot v8.1...")
-            self.send_startup_message()
-            
+    async def websocket_candle_handler(self):
+        """Websocket handler untuk menerima candle close dari Binance dan trigger strategi secara real-time."""
+        client = await AsyncClient.create(config.BINANCE_API_KEY, config.BINANCE_API_SECRET)
+        bm = BinanceSocketManager(client)
+        interval = self.default_interval.lower()
+        streams = [f"{pair.lower()}@kline_{interval}" for pair in self.trading_pairs]
+        multi_stream = bm.multiplex_socket(streams)
+        async with multi_stream as stream:
             while True:
-                if not self.paused:
-                    self.main_loop()
-                time.sleep(config.LOOP_INTERVAL)
-                
+                res = await stream.recv()
+                if res and 'data' in res and 'k' in res['data']:
+                    kline = res['data']['k']
+                    if kline['x']:  # Hanya proses saat candle close
+                        symbol = res['data']['s']
+                        candle = {
+                            'timestamp': kline['t'],
+                            'open': float(kline['o']),
+                            'high': float(kline['h']),
+                            'low': float(kline['l']),
+                            'close': float(kline['c']),
+                            'volume': float(kline['v']),
+                            'close_time': kline['T']
+                        }
+                        self.strategy.on_new_candle(symbol, candle)
+                        # Bisa tambahkan trigger analisis/eksekusi di sini
+
+    def start(self):
+        """Initialize and start the bot (websocket version)"""
+        try:
+            logger.info("Starting ICT Bot v8.1 (websocket real-time)...")
+            self.send_startup_message()
+            asyncio.run(self.websocket_candle_handler())
         except Exception as e:
             logger.error(f"Bot error: {e}")
             if config.ENABLE_TELEGRAM:
