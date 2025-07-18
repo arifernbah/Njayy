@@ -198,6 +198,7 @@ class ICTBot:
             pairs = ', '.join(self.trading_pairs)
             msg = (
                 f"👋 Hai, aku Arif_Bot!  \n"
+                f"Mulai tugas: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB\n"
                 f"Hari ini siap trading, jangan galak-galak ya~\n\n"
                 f"Pairs: {pairs}\n"
                 f"Target sinyal: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}/hari\n"
