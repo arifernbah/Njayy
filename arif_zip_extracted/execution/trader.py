@@ -512,6 +512,11 @@ class EnhancedICTTrader:
     def execute_entry_enhanced(self, signal):
         """Enhanced entry execution with comprehensive checks and auto leverage"""
         try:
+            # Anti-double entry: cek apakah sudah ada posisi aktif untuk symbol ini
+            for pos in self.active_positions.values():
+                if pos.get('symbol') == self.symbol:
+                    logger.warning(f"[ANTI-DOUBLE ENTRY] Sudah ada posisi aktif untuk {self.symbol}, skip entry baru.")
+                    return False
             # Circuit breaker check
             if not self.check_circuit_breaker():
                 return False
