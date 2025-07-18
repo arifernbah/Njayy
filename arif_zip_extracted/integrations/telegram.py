@@ -27,7 +27,7 @@ class TelegramBot:
             
             if response.status_code == 200:
                 bot_info = response.json()
-                logger.info(f"Telegram bot connected: {bot_info['result']['username']}")
+                logger.info(f"Telegram bot connected: {safe_get(bot_info, 'result', 'username', default='N/A')}")
                 return True
             else:
                 logger.error(f"Telegram connection failed: {response.status_code}")
@@ -54,7 +54,7 @@ class TelegramBot:
                     logger.info("Telegram message sent successfully")
                     return True
                 else:
-                    error_msg = response.json().get('description', 'Unknown error')
+                    error_msg = safe_get(response.json(), 'description', 'Unknown error')
                     logger.error(f"Telegram send failed (attempt {attempt+1}): {error_msg}")
             except Exception as e:
                 logger.error(f"Telegram send error (attempt {attempt+1}): {e}")
@@ -93,7 +93,7 @@ class TelegramBot:
 {zone_icon} *ZONE*: {signal.zone_position}
 📌 *PAIR*: {signal.pair}
 🕒 *Time*: {timestamp}
-📊 *Bias*: {bias['direction']} ({bias['strength']:.1f})
+📊 *Bias*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=0):.1f})
 🧠 *Signal Strength*: {signal.strength}
 🧱 *OB + BOS Valid*: ✅
 🕳 *FVG*: ✅
@@ -151,7 +151,7 @@ class TelegramBot:
 • VWAP Distance: {signal.vwap_distance:.2%}
 • Institutional Volume: {signal.institutional_volume_strength:.2f}
 
-📊 *BIAS*: {bias['direction']} ({bias['strength']:.1f})
+📊 *BIAS*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=0):.1f})
         """
         
         return self.send_message(message)
@@ -178,7 +178,7 @@ class TelegramBot:
 🎯 *TP1*: {signal.tp1}
 🎯 *TP2*: {signal.tp2}
 
-📊 *BIAS*: {bias['direction']} ({bias['strength']:.1f})
+📊 *BIAS*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=0):.1f})
 🧠 *Signal Strength*: {signal.strength}
 
 🚨 *HIGH CONFIDENCE SIGNAL*
@@ -311,7 +311,7 @@ class TelegramBot:
         try:
             response = requests.get(url, params=params, timeout=timeout+5)
             if response.status_code == 200:
-                updates = response.json()['result']
+                updates = safe_get(response.json(), 'result', default=[])
                 return updates
             else:
                 logger.error(f"Polling failed: {response.text}")
@@ -342,9 +342,9 @@ class TelegramBot:
         while self._polling_active:
             updates = self.poll_messages()
             for update in updates:
-                self._last_update_id = update['update_id']
+                self._last_update_id = safe_get(update, 'update_id', default=None)
                 if 'message' in update:
-                    msg = update['message']
+                    msg = safe_get(update, 'message', default=None)
                     if self.message_handler:
                         try:
                             self.message_handler(msg)
@@ -360,3 +360,11 @@ class TelegramBot:
 
 # Create global telegram instance
 telegram = TelegramBot()
+
+# Contoh perbaikan pada akses bias dan hasil API Telegram
+def safe_get(d, *keys, default=None):
+    for k in keys:
+        if not isinstance(d, dict) or k not in d:
+            return default
+        d = d[k]
+    return d

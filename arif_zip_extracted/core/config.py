@@ -35,13 +35,14 @@ class Config:
                 resp = requests.get(url, timeout=10)
                 data = resp.json()
                 # Filter USDT pairs only
-                usdt_pairs = [d for d in data if d['symbol'].endswith('USDT')]
+                usdt_pairs = [d for d in data if isinstance(d, dict) and 'symbol' in d and d['symbol'].endswith('USDT')]
                 # Filter bluechip/major only
                 bluechip_pairs = [d for d in usdt_pairs if d['symbol'][:-4] in self.BLUECHIP_BASE_ASSETS]
                 # Sort by quoteVolume (USDT volume) descending
+                bluechip_pairs = [d for d in bluechip_pairs if 'quoteVolume' in d]
                 bluechip_pairs.sort(key=lambda x: float(x['quoteVolume']), reverse=True)
                 # Ambil 10 teratas
-                self.TRADING_PAIRS = [d['symbol'] for d in bluechip_pairs[:self.TOP_VOLUME_COUNT]]
+                self.TRADING_PAIRS = [d['symbol'] for d in bluechip_pairs[:self.TOP_VOLUME_COUNT] if 'symbol' in d]
             except Exception as e:
                 print(f"[Config] Gagal fetch top volume pairs: {e}")
         
