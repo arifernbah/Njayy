@@ -610,6 +610,11 @@ class ICTStrategy:
             logger.error(f"Signal creation error: {e}")
             return None
 
+    def on_new_candle(self, symbol, candle):
+        """Handler untuk candle baru dari websocket. Akan dipanggil setiap ada candle close baru."""
+        # TODO: Proses candle baru, update DataFrame, dan jalankan analisis sinyal
+        pass
+
 
 class Signal:
     def __init__(self, pair, direction, entry, sl, tp1, tp2,

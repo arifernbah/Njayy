@@ -272,6 +272,11 @@ class ICTBot:
         )
         return settings
 
+    def start_websocket(self):
+        """Inisialisasi dan jalankan websocket Binance untuk menerima candle baru sesuai interval di config."""
+        # TODO: Implementasi websocket event handler
+        pass
+
 if __name__ == "__main__":
     def telegram_message_handler(msg):
         text = msg.get('text', '').strip().lower()

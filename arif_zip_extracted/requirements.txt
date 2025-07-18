@@ -6,3 +6,4 @@ requests==2.31.0
 python-dotenv==1.0.1
 # Optional: for logging enhancements
 loguru==0.7.2
+python-binance>=1.0.17
