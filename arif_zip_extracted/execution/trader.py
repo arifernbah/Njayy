@@ -9,6 +9,7 @@ import statistics
 from integrations.telegram import telegram
 import decimal
 import os
+import json
 
 def safe_get(d, *keys, default=None):
     for k in keys:
@@ -146,6 +147,31 @@ class EnhancedICTTrader:
                 f.write(f"[{datetime.utcnow()}] STARTUP BALANCE: {balance:.2f} USDT\n")
         except Exception as e:
             logger.error(f"[STARTUP] Failed to log initial balance: {e}")
+
+    def save_state(self, filename="state.json"):
+        try:
+            state = {
+                "stuck_alert_sent": list(self.stuck_alert_sent),
+                "last_entry_time": {k: v.isoformat() for k, v in self.last_entry_time.items()},
+                "daily_trades": self.daily_trades
+            }
+            with open(filename, "w") as f:
+                json.dump(state, f)
+        except Exception as e:
+            logger.error(f"Failed to save state: {e}")
+
+    def load_state(self, filename="state.json"):
+        try:
+            if not os.path.exists(filename):
+                return
+            with open(filename, "r") as f:
+                state = json.load(f)
+            self.stuck_alert_sent = set(state.get("stuck_alert_sent", []))
+            from datetime import datetime
+            self.last_entry_time = {k: datetime.fromisoformat(v) for k, v in state.get("last_entry_time", {}).items()}
+            self.daily_trades = state.get("daily_trades", 0)
+        except Exception as e:
+            logger.error(f"Failed to load state: {e}")
 
     def _monitoring_loop(self):
         """Background monitoring for health checks and maintenance"""
@@ -587,6 +613,8 @@ class EnhancedICTTrader:
             )
             # Log equity after entry
             self.log_equity(event="ENTRY")
+            # Save state after successful entry
+            self.save_state()
             return True
         except Exception as e:
             logger.error(f"Execute entry error: {e}")
@@ -936,6 +964,8 @@ class EnhancedICTTrader:
             f"⏰ Shutdown time: {datetime.utcnow()}"
         )
         
+        # Save state saat shutdown
+        self.save_state()
         logger.info("Enhanced ICT Trader shutdown complete")
 
     def check_margin_sufficient(self, position_size, entry_price):
