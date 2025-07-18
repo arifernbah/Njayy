@@ -10,6 +10,13 @@ from integrations.telegram import telegram
 import decimal
 import os
 
+def safe_get(d, *keys, default=None):
+    for k in keys:
+        if not isinstance(d, dict) or k not in d:
+            return default
+        d = d[k]
+    return d
+
 class EnhancedICTTrader:
     def __init__(self):
         self.client = Client(api_key=config.BINANCE_API_KEY, api_secret=config.BINANCE_SECRET)
@@ -56,11 +63,11 @@ class EnhancedICTTrader:
                 open_positions = []
             for pos in open_positions:
                 try:
-                    if abs(float(pos['positionAmt'])) > 0:
-                        symbol = pos['symbol']
-                        entry = float(pos['entryPrice'])
-                        size = abs(float(pos['positionAmt']))
-                        direction = 'BUY' if float(pos['positionAmt']) > 0 else 'SELL'
+                    if abs(float(safe_get(pos, 'positionAmt', default=0))) > 0:
+                        symbol = safe_get(pos, 'symbol', default='')
+                        entry = float(safe_get(pos, 'entryPrice', default=0))
+                        size = abs(float(safe_get(pos, 'positionAmt', default=0)))
+                        direction = 'BUY' if float(safe_get(pos, 'positionAmt', default=0)) > 0 else 'SELL'
                         # Fetch open orders for this symbol
                         try:
                             open_orders = self.client.futures_get_open_orders(symbol=symbol)
@@ -71,34 +78,34 @@ class EnhancedICTTrader:
                         tp1_order = None
                         tp2_order = None
                         # Identify SL/TP orders
-                        limit_orders = [o for o in open_orders if o.get('type') == 'LIMIT']
-                        stop_orders = [o for o in open_orders if o.get('type') == 'STOP_MARKET']
+                        limit_orders = [o for o in open_orders if safe_get(o, 'type', default='') == 'LIMIT']
+                        stop_orders = [o for o in open_orders if safe_get(o, 'type', default='') == 'STOP_MARKET']
                         for o in stop_orders:
-                            if (direction == 'BUY' and float(o['stopPrice']) < entry) or (direction == 'SELL' and float(o['stopPrice']) > entry):
+                            if (direction == 'BUY' and float(safe_get(o, 'stopPrice', default=0)) < entry) or (direction == 'SELL' and float(safe_get(o, 'stopPrice', default=0)) > entry):
                                 sl_order = o
                         tp_candidates = []
                         for o in limit_orders:
-                            if (direction == 'BUY' and float(o['price']) > entry) or (direction == 'SELL' and float(o['price']) < entry):
+                            if (direction == 'BUY' and float(safe_get(o, 'price', default=0)) > entry) or (direction == 'SELL' and float(safe_get(o, 'price', default=0)) < entry):
                                 tp_candidates.append(o)
-                        tp_candidates.sort(key=lambda x: abs(float(x['price']) - entry))
+                        tp_candidates.sort(key=lambda x: abs(float(safe_get(x, 'price', default=0)) - entry))
                         if len(tp_candidates) > 0:
                             tp1_order = tp_candidates[0]
                         if len(tp_candidates) > 1:
                             tp2_order = tp_candidates[1]
                         trailing_order = None
                         for o in open_orders:
-                            if o.get('type') == 'TRAILING_STOP_MARKET':
+                            if safe_get(o, 'type', default='') == 'TRAILING_STOP_MARKET':
                                 trailing_order = o
                         sl_moved_to_be = False
-                        if sl_order and abs(float(sl_order['stopPrice']) - entry) < 1e-6:
+                        if sl_order and abs(float(safe_get(sl_order, 'stopPrice', default=0)) - entry) < 1e-6:
                             sl_moved_to_be = True
                         trailing_active = trailing_order is not None
                         self.active_positions[symbol] = {
                             'symbol': symbol,
                             'entry': entry,
-                            'sl': float(sl_order['stopPrice']) if sl_order else None,
-                            'tp1': float(tp1_order['price']) if tp1_order else None,
-                            'tp2': float(tp2_order['price']) if tp2_order else None,
+                            'sl': float(safe_get(sl_order, 'stopPrice', default=0)) if sl_order else None,
+                            'tp1': float(safe_get(tp1_order, 'price', default=0)) if tp1_order else None,
+                            'tp2': float(safe_get(tp2_order, 'price', default=0)) if tp2_order else None,
                             'size': size,
                             'direction': direction,
                             'opened_at': None,
@@ -339,8 +346,8 @@ class EnhancedICTTrader:
         """Verify if position is still active on exchange"""
         try:
             positions = self._execute_with_retry(self.client.futures_position_information)
-            return any(float(pos['positionAmt']) != 0 for pos in positions 
-                      if pos['symbol'] == self.symbol)
+            return any(float(safe_get(pos, 'positionAmt', default=0)) != 0 for pos in positions 
+                      if safe_get(pos, 'symbol', default='') == self.symbol)
         except Exception as e:
             logger.error(f"Failed to verify position: {e}")
             return False
@@ -348,12 +355,12 @@ class EnhancedICTTrader:
     def cancel_all_orders(self, position):
         """Cancel all pending orders for a position"""
         cancelled_orders = []
-        for order_type, order in position.get('orders', {}).items():
+        for order_type, order in safe_get(position, 'orders', default={}).items():
             if order and 'orderId' in order:
                 try:
                     self.client.futures_cancel_order(
                         symbol=self.symbol,
-                        orderId=order['orderId']
+                        orderId=safe_get(order, 'orderId', default=0)
                     )
                     cancelled_orders.append(order_type)
                 except Exception as e:
@@ -397,7 +404,7 @@ class EnhancedICTTrader:
             )
             
             # Cache order for tracking
-            self.order_cache[order['orderId']] = order
+            self.order_cache[safe_get(order, 'orderId', default=0)] = order
             logger.info(f"Market order placed: {order}")
             return order
             
@@ -429,7 +436,7 @@ class EnhancedICTTrader:
                 timeInForce='GTC'
             )
             
-            self.order_cache[order['orderId']] = order
+            self.order_cache[safe_get(order, 'orderId', default=0)] = order
             logger.info(f"Stop market order placed: {order}")
             return order
             
@@ -475,7 +482,7 @@ class EnhancedICTTrader:
             if not order:
                 logger.error("Limit order gagal, tidak ada response dari Binance.")
                 return None
-            self.order_cache[order['orderId']] = order
+            self.order_cache[safe_get(order, 'orderId', default=0)] = order
             logger.info(f"Limit order placed: {order}")
             return order
         except Exception as e:
@@ -580,7 +587,7 @@ class EnhancedICTTrader:
 
     def track_position_enhanced(self, signal, entry_order, size, orders):
         """Enhanced position tracking with more metadata"""
-        position_id = entry_order['orderId']
+        position_id = safe_get(entry_order, 'orderId', default=0)
         self.active_positions[position_id] = {
             'symbol': self.symbol,
             'entry': signal.entry,
@@ -609,16 +616,16 @@ class EnhancedICTTrader:
 
     def should_move_sl_to_be_enhanced(self, position, current_price):
         """Enhanced SL+ logic with time and volatility considerations"""
-        entry = position['entry']
-        tp1 = position['tp1']
-        direction = position['direction']
+        entry = safe_get(position, 'entry', default=0)
+        tp1 = safe_get(position, 'tp1', default=0)
+        direction = safe_get(position, 'direction', default='')
         
         # Time factor - more conservative early in trade
-        time_factor = (datetime.utcnow() - position['opened_at']).seconds / 3600
+        time_factor = (datetime.utcnow() - safe_get(position, 'opened_at', default=datetime.utcnow())).seconds / 3600
         volatility_threshold = 0.8 if time_factor > 2 else 0.75
         
         # Volatility adjustment
-        if self.market_volatility > position['market_volatility_at_entry'] * 1.5:
+        if self.market_volatility > safe_get(position, 'market_volatility_at_entry', default=0) * 1.5:
             volatility_threshold = 0.85  # More conservative in high volatility
         
         # Calculate profit target
@@ -633,12 +640,12 @@ class EnhancedICTTrader:
         """Check for positions that haven't been updated recently"""
         cutoff_time = datetime.utcnow() - timedelta(minutes=5)
         for pos_id, position in self.active_positions.items():
-            if position['last_price_check'] < cutoff_time:
+            if safe_get(position, 'last_price_check', default=None) < cutoff_time:
                 logger.warning(f"Position {pos_id} hasn't been updated recently")
                 telegram.send_message(
                     f"⚠️ *POSITION ALERT*\n"
                     f"Position {pos_id} may be stuck\n"
-                    f"Last update: {position['last_price_check']}"
+                    f"Last update: {safe_get(position, 'last_price_check', default='N/A')}"
                 )
 
     def get_current_price_enhanced(self, symbol):
@@ -651,7 +658,7 @@ class EnhancedICTTrader:
                 self.client.futures_symbol_ticker,
                 symbol=symbol
             )
-            return float(ticker['price'])
+            return float(safe_get(ticker, 'price', default=0))
             
         except Exception as e:
             logger.error(f"Failed to get price: {e}")
@@ -663,7 +670,7 @@ class EnhancedICTTrader:
             for pos_id, position in list(self.active_positions.items()):
                 try:
                     # Update last check time
-                    position['last_price_check'] = datetime.utcnow()
+                    self.active_positions[pos_id]['last_price_check'] = datetime.utcnow()
                     
                     # Verify position is still active
                     if not self.verify_position_active(pos_id):
@@ -672,13 +679,13 @@ class EnhancedICTTrader:
                     
                     current_price = self.get_current_price_enhanced(self.symbol)
                     if current_price <= 0:
-                        position['price_check_failures'] += 1
-                        if position['price_check_failures'] >= 3:
+                        self.active_positions[pos_id]['price_check_failures'] += 1
+                        if self.active_positions[pos_id]['price_check_failures'] >= 3:
                             logger.error(f"Multiple price check failures for position {pos_id}")
                         continue
                     
                     # Reset failure count on successful price fetch
-                    position['price_check_failures'] = 0
+                    self.active_positions[pos_id]['price_check_failures'] = 0
                     
                     # Existing management logic with enhanced checks
                     self._manage_single_position(pos_id, position, current_price)
@@ -691,11 +698,11 @@ class EnhancedICTTrader:
 
     def _manage_single_position(self, pos_id, position, current_price):
         """Manage a single position with enhanced logic"""
-        entry = position['entry']
-        tp1 = position['tp1']
-        tp2 = position['tp2']
-        sl = position['sl']
-        direction = position['direction']
+        entry = safe_get(position, 'entry', default=0)
+        tp1 = safe_get(position, 'tp1', default=0)
+        tp2 = safe_get(position, 'tp2', default=0)
+        sl = safe_get(position, 'sl', default=0)
+        direction = safe_get(position, 'direction', default='')
 
         # Calculate targets
         if direction == 'BUY':
@@ -708,88 +715,89 @@ class EnhancedICTTrader:
             sl_hit = current_price >= sl
 
         # 1. Enhanced SL+ logic
-        if not position['sl_moved_to_be']:
+        if not safe_get(position, 'sl_moved_to_be', default=False):
             if self.should_move_sl_to_be_enhanced(position, current_price):
                 self.move_sl_to_breakeven_enhanced(position)
 
         # 2. Handle TP1 hit
-        if not position['tp1_hit'] and tp1_hit:
+        if not safe_get(position, 'tp1_hit', default=False) and tp1_hit:
             self._handle_tp1_hit(pos_id, position)
 
         # 3. Handle TP2 hit
-        if not position['tp2_hit'] and tp2_hit:
+        if not safe_get(position, 'tp2_hit', default=False) and tp2_hit:
             self._handle_tp2_hit(pos_id, position)
 
         # 4. Handle SL hit
-        if not position['notifications']['sl_notified'] and sl_hit:
-            self._handle_sl_hit(pos_id, position)
+        if not safe_get(position, 'notifications', default={})['sl_notified']:
+            if sl_hit:
+                self._handle_sl_hit(pos_id, position)
 
     def move_sl_to_breakeven_enhanced(self, position):
         """Enhanced SL+ movement with validation"""
         try:
             # Cancel existing SL order
-            if position['orders'].get('sl_order'):
+            if safe_get(position, 'orders', default={}).get('sl_order'):
                 self.client.futures_cancel_order(
                     symbol=self.symbol,
-                    orderId=position['orders']['sl_order']['orderId']
+                    orderId=safe_get(safe_get(position, 'orders', default={})['sl_order'], 'orderId', default=0)
                 )
 
             # Place new SL at break-even
-            opposite_side = 'SELL' if position['direction'] == 'BUY' else 'BUY'
+            opposite_side = 'SELL' if safe_get(position, 'direction', default='') == 'BUY' else 'BUY'
             new_sl_order = self.place_stop_market_order_enhanced(
                 opposite_side, 
-                position['entry'],
-                position['size']
+                safe_get(position, 'entry', default=0),
+                safe_get(position, 'size', default=0)
             )
             
             if new_sl_order:
-                position['orders']['sl_order'] = new_sl_order
-                position['sl_moved_to_be'] = True
+                self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['orders']['sl_order'] = new_sl_order
+                self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['sl_moved_to_be'] = True
                 
                 # Send notification
-                if not position['notifications']['sl_be_notified']:
+                if not safe_get(position, 'notifications', default={})['sl_be_notified']:
                     telegram.send_message(
                         f"📈 *SL MOVED TO BREAKEVEN*\n"
                         f"📌 PAIR: {self.symbol}\n"
-                        f"🛡️ Risk eliminated - SL at entry: ${position['entry']:.2f}\n"
+                        f"🛡️ Risk eliminated - SL at entry: ${safe_get(position, 'entry', default=0):.2f}\n"
                         f"💹 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}"
                     )
-                    position['notifications']['sl_be_notified'] = True
+                    self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['sl_be_notified'] = True
                     
         except Exception as e:
             logger.error(f"Failed to move SL to breakeven: {e}")
 
     def _handle_tp1_hit(self, pos_id, position):
         """Handle TP1 hit event"""
-        position['tp1_hit'] = True
+        self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['tp1_hit'] = True
         self.activate_trailing_stop_enhanced(position)
         
-        if not position['notifications']['tp1_notified']:
+        if not safe_get(position, 'notifications', default={})['tp1_notified']:
             telegram.send_message(
                 f"🎯 *TP1 HIT!*\n"
                 f"📌 PAIR: {self.symbol}\n"
-                f"💰 70% position closed at ${position['tp1']:.2f}\n"
+                f"💰 70% position closed at ${safe_get(position, 'tp1', default=0):.2f}\n"
                 f"🔄 Trailing stop activated for remaining 30%\n"
                 f"📊 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}"
             )
-            position['notifications']['tp1_notified'] = True
+            self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['tp1_notified'] = True
         # Log equity after TP1
         self.log_equity(event="TP1")
 
     def _handle_tp2_hit(self, pos_id, position):
         """Handle TP2 hit event"""
-        position['tp2_hit'] = True
+        self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['tp2_hit'] = True
         
-        if not position['notifications']['tp2_notified']:
+        if not safe_get(position, 'notifications', default={})['tp2_notified']:
             pnl = self._calculate_position_pnl(position)
             telegram.send_message(
                 f"🎯 *TP2 HIT!*\n"
                 f"📌 PAIR: {self.symbol}\n"
-                f"💰 Full position closed at ${position['tp2']:.2f}\n"
+                f"💰 Full position closed at ${safe_get(position, 'tp2', default=0):.2f}\n"
                 f"🏆 Maximum profit achieved!\n"
                 f"📈 Estimated PnL: ${pnl:.2f}"
             )
-            position['notifications']['tp2_notified'] = True
+            self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['tp2_notified'] = True
             
         # Update performance
         self.performance['wins'] += 1
@@ -797,7 +805,7 @@ class EnhancedICTTrader:
         self.performance['total_pnl'] += pnl
         
         # Remove position
-        del self.active_positions[pos_id]
+        del self.active_positions[safe_get(position, 'symbol', default='')][pos_id]
 
     def _handle_sl_hit(self, pos_id, position):
         """Handle SL hit event"""
@@ -806,11 +814,11 @@ class EnhancedICTTrader:
         telegram.send_message(
             f"🛑 *STOP LOSS HIT!*\n"
             f"📌 PAIR: {self.symbol}\n"
-            f"⚠️ Position closed at ${position['sl']:.2f}\n"
+            f"⚠️ Position closed at ${safe_get(position, 'sl', default=0):.2f}\n"
             f"🛡️ Capital protected\n"
             f"📉 Estimated PnL: ${pnl:.2f}"
         )
-        position['notifications']['sl_notified'] = True
+        self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['sl_notified'] = True
         # Log equity after SL
         self.log_equity(event="SL")
         
@@ -820,16 +828,16 @@ class EnhancedICTTrader:
         self.performance['total_pnl'] += pnl
         
         # Remove position
-        del self.active_positions[pos_id]
+        del self.active_positions[safe_get(position, 'symbol', default='')][pos_id]
 
     def _calculate_position_pnl(self, position):
         """Calculate estimated PnL for a position"""
         try:
             current_price = self.get_current_price_enhanced(self.symbol)
-            entry_price = position['entry']
-            size = position['size']
+            entry_price = safe_get(position, 'entry', default=0)
+            size = safe_get(position, 'size', default=0)
             
-            if position['direction'] == 'BUY':
+            if safe_get(position, 'direction', default='') == 'BUY':
                 pnl = (current_price - entry_price) * size
             else:
                 pnl = (entry_price - current_price) * size
@@ -842,14 +850,14 @@ class EnhancedICTTrader:
         """Enhanced trailing stop activation"""
         try:
             # Cancel existing SL order
-            if position['orders'].get('sl_order'):
+            if safe_get(position, 'orders', default={}).get('sl_order'):
                 self.client.futures_cancel_order(
                     symbol=self.symbol,
-                    orderId=position['orders']['sl_order']['orderId']
+                    orderId=safe_get(safe_get(position, 'orders', default={})['sl_order'], 'orderId', default=0)
                 )
 
             # Calculate remaining quantity (30% after TP1)
-            remaining_size = round(position['size'] * 0.3, 4)
+            remaining_size = round(safe_get(position, 'size', default=0) * 0.3, 4)
             
             # Adjust callback rate based on volatility
             base_callback = 1.5
@@ -859,7 +867,7 @@ class EnhancedICTTrader:
                 callback_rate = base_callback
             
             # Place trailing stop market order
-            opposite_side = 'SELL' if position['direction'] == 'BUY' else 'BUY'
+            opposite_side = 'SELL' if safe_get(position, 'direction', default='') == 'BUY' else 'BUY'
             trailing_order = self._execute_with_retry(
                 self.client.futures_create_order,
                 symbol=self.symbol,
@@ -871,11 +879,11 @@ class EnhancedICTTrader:
             )
             
             if trailing_order:
-                position['orders']['trailing_order'] = trailing_order
-                position['trailing_active'] = True
+                self.active_positions[safe_get(position, 'symbol', default='')][safe_get(position, 'symbol', default='')][pos_id]['orders']['trailing_order'] = trailing_order
+                self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['trailing_active'] = True
                 
                 # Send notification
-                if not position['notifications']['trailing_notified']:
+                if not safe_get(position, 'notifications', default={})['trailing_notified']:
                     telegram.send_message(
                         f"🔄 *TRAILING STOP ACTIVATED*\n"
                         f"📌 PAIR: {self.symbol}\n"
@@ -883,7 +891,7 @@ class EnhancedICTTrader:
                         f"🎯 Callback rate: {callback_rate:.1f}%\n"
                         f"💹 Market volatility: {self.market_volatility:.2f}%"
                     )
-                    position['notifications']['trailing_notified'] = True
+                    self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['trailing_notified'] = True
                     
         except Exception as e:
             logger.error(f"Failed to activate trailing stop: {e}")
