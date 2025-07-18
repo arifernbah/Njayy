@@ -6,6 +6,7 @@ from integrations.telegram import telegram
 from strategies.ict_core import ICTStrategy
 from execution.trader import EnhancedICTTrader
 from analysis.bias import BiasAnalyzer
+import os
 
 class ICTBot:
     def __init__(self):
@@ -87,6 +88,18 @@ class ICTBot:
                 return session
         return None
 
+    def log_valid_signal(self, signal):
+        try:
+            log_line = (
+                f"[{datetime.utcnow()}] VALID SIGNAL: {signal.pair} {signal.direction} "
+                f"entry={signal.entry} sl={signal.sl} tp1={signal.tp1} tp2={signal.tp2} "
+                f"score={getattr(signal, 'quality_score', 'N/A')} zone={getattr(signal, 'zone_position', 'N/A')}\n"
+            )
+            with open("valid_signals.log", "a") as f:
+                f.write(log_line)
+        except Exception as e:
+            logger.error(f"Failed to log valid signal: {e}")
+
     def validate_signal(self, signal):
         """Enhanced signal validation with ICT quality checks"""
         try:
@@ -121,6 +134,8 @@ class ICTBot:
                 if not hasattr(self, 'last_entry_time'):
                     self.last_entry_time = {}
                 self.last_entry_time[pair] = utc_now
+                # Log valid signal
+                self.log_valid_signal(signal)
             return valid
         except Exception as e:
             logger.error(f"Signal validation error: {e}")

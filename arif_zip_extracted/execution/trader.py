@@ -8,6 +8,7 @@ from collections import defaultdict
 import statistics
 from integrations.telegram import telegram
 import decimal
+import os
 
 class EnhancedICTTrader:
     def __init__(self):
@@ -126,12 +127,18 @@ class EnhancedICTTrader:
 
     def _monitoring_loop(self):
         """Background monitoring for health checks and maintenance"""
+        last_log_hour = None
         while self.monitoring_active:
             try:
                 self._health_check()
                 self._cleanup_old_api_calls()
                 self._update_market_volatility()
                 self._daily_summary_check()
+                # Log equity every hour
+                now = datetime.utcnow()
+                if last_log_hour is None or now.hour != last_log_hour:
+                    self.log_equity(event="PERIODIC")
+                    last_log_hour = now.hour
                 time.sleep(60)  # Check every minute
             except Exception as e:
                 logger.error(f"Monitoring loop error: {e}")
@@ -472,6 +479,15 @@ class EnhancedICTTrader:
             logger.error(f"Failed to set leverage for {symbol} via API: {e}")
             return None
 
+    def log_equity(self, event="PERIODIC"):
+        try:
+            equity = self.get_account_balance()
+            log_line = f"[{datetime.utcnow()}] Equity: {equity:.2f} USDT (after {event} {self.symbol})\n"
+            with open("equity.log", "a") as f:
+                f.write(log_line)
+        except Exception as e:
+            logger.error(f"Failed to log equity: {e}")
+
     def execute_entry_enhanced(self, signal):
         """Enhanced entry execution with comprehensive checks and auto leverage"""
         try:
@@ -539,6 +555,8 @@ class EnhancedICTTrader:
                 f"💹 Market Vol: {self.market_volatility:.2f}%\n"
                 f"🔢 Daily Trades: {self.daily_trades}/{self.max_daily_trades}"
             )
+            # Log equity after entry
+            self.log_equity(event="ENTRY")
             
             return True
             
@@ -741,6 +759,8 @@ class EnhancedICTTrader:
                 f"📊 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}"
             )
             position['notifications']['tp1_notified'] = True
+        # Log equity after TP1
+        self.log_equity(event="TP1")
 
     def _handle_tp2_hit(self, pos_id, position):
         """Handle TP2 hit event"""
@@ -777,6 +797,8 @@ class EnhancedICTTrader:
             f"📉 Estimated PnL: ${pnl:.2f}"
         )
         position['notifications']['sl_notified'] = True
+        # Log equity after SL
+        self.log_equity(event="SL")
         
         # Update performance
         self.performance['losses'] += 1
