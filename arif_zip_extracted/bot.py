@@ -13,6 +13,8 @@ class ICTBot:
         self.author = "arifernbah1"
         self.version = "8.1"
         self.last_update = "2025-07-15 10:53:00"
+        self.start_time = datetime.utcnow()  # Track bot start time
+        self.paused = False  # Track pause state
         
         # Components
         self.strategy = ICTStrategy()
@@ -38,7 +40,8 @@ class ICTBot:
             self.send_startup_message()
             
             while True:
-                self.main_loop()
+                if not self.paused:
+                    self.main_loop()
                 time.sleep(config.LOOP_INTERVAL)
                 
         except Exception as e:
@@ -228,6 +231,50 @@ class ICTBot:
         except Exception as e:
             logger.error(f"Status update error: {e}")
 
+    def get_uptime(self):
+        delta = datetime.utcnow() - self.start_time
+        hours, remainder = divmod(int(delta.total_seconds()), 3600)
+        minutes, seconds = divmod(remainder, 60)
+        return f"{hours}h {minutes}m {seconds}s"
+
+    def get_summary(self):
+        perf = self.trader.get_enhanced_performance()
+        summary = (
+            f"📊 *SUMMARY*\n"
+            f"Total Trades: {perf.get('total_trades', 0)}\n"
+            f"✅ Wins: {perf.get('wins', 0)}\n"
+            f"❌ Losses: {perf.get('losses', 0)}\n"
+            f"🎯 Win Rate: {perf.get('win_rate', 0):.1f}%\n"
+            f"💰 Daily PnL: ${perf.get('daily_pnl', 0):.2f}\n"
+            f"📉 Drawdown: {self.trader.get_drawdown():.2f}%\n"
+            f"📈 Max Drawdown: {self.trader.get_max_drawdown():.2f}%\n"
+            f"💹 Market Volatility: {perf.get('market_volatility', 0):.2f}%\n"
+            f"🔄 Active Positions: {perf.get('active_positions', 0)}\n"
+            f"⏱ Uptime: {self.get_uptime()}"
+        )
+        return summary
+
+    def get_settings(self):
+        s = self
+        settings = (
+            f"⚙️ *BOT SETTINGS*\n"
+            f"Risk: {s.risk_management['default_risk']*100:.2f}%\n"
+            f"Leverage: {s.trader.leverage}x\n"
+            f"Max Daily Trades: {s.risk_management['max_trades']}\n"
+            f"Max Concurrent Trades: {s.risk_management['max_concurrent']}\n"
+            f"Drawdown Limit: {config.MAX_DRAWDOWN}%\n"
+            f"Min Quality Score: {s.filters['min_quality_score']}\n"
+            f"Min Signal Strength: {s.filters['signal_strength']}\n"
+            f"Min Bias Strength: {s.filters['bias_strength']}\n"
+            f"Min Regime Score: {s.filters['regime_score']}\n"
+            f"Volatility Range: {s.filters['vol_range'][0]} - {s.filters['vol_range'][1]}\n"
+            f"Session: London {config.LONDON_START}-{config.LONDON_END}, NY {config.NY_START}-{config.NY_END}, Asia {config.ASIAN_START}-{config.ASIAN_END}\n"
+            f"Pairs: {', '.join(self.trading_pairs)}\n"
+            f"Loop Interval: {config.LOOP_INTERVAL}s\n"
+            f"Telegram: {config.ENABLE_TELEGRAM}"
+        )
+        return settings
+
 if __name__ == "__main__":
     def telegram_message_handler(msg):
         text = msg.get('text', '').strip().lower()
@@ -252,17 +299,35 @@ if __name__ == "__main__":
 /status - Cek status bot
 /balance - Cek saldo USDT
 /drawdown - Cek drawdown saat ini
+/summary - Ringkasan performa harian
+/settings - Lihat setting utama bot
+/uptime - Lama bot berjalan
+/pause - Pause trading
+/resume - Lanjutkan trading
 /help - Lihat daftar command
-
-Perintah lanjutan dapat ditambahkan nanti seperti /summary, /pause, dll.
+/shutdown - Matikan bot
 """)
             telegram.send_main_menu()  # Show main menu keyboard on /help
+        elif text == "/summary":
+            telegram.send_message(ICTBot.instance.get_summary())
+        elif text == "/settings":
+            telegram.send_message(ICTBot.instance.get_settings())
+        elif text == "/uptime":
+            telegram.send_message(f"⏱ Uptime: {ICTBot.instance.get_uptime()}")
+        elif text == "/pause":
+            ICTBot.instance.paused = True
+            telegram.send_message("⏸️ Trading paused. Bot tidak akan entry baru sampai /resume.")
+        elif text == "/resume":
+            ICTBot.instance.paused = False
+            telegram.send_message("▶️ Trading resumed. Bot akan entry seperti biasa.")
         elif text == "/shutdown":
             telegram.send_message("🛑 Bot akan dimatikan...")
             exit(0)
         else:
             telegram.send_message(f"⚠️ Perintah tidak dikenali: {text}")
 
-    telegram.start_polling(handler=telegram_message_handler)
+    ICTBot.instance = None
     bot = ICTBot()
+    telegram.start_polling(handler=telegram_message_handler)
+    ICTBot.instance = bot
     bot.start()
