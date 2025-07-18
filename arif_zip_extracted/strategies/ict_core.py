@@ -539,6 +539,8 @@ class ICTStrategy:
                     
                     # Enhanced signal creation with quality data
                     signal = self.create_signal(ob, bias)
+                    if signal is None:
+                        continue  # Skip jika gagal membuat signal
                     signal.quality_score = quality_score
                     signal.quality_class = quality_class
                     signal.zones_data = zones_data
