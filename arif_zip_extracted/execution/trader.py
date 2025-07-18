@@ -603,6 +603,7 @@ class EnhancedICTTrader:
             })
             self.daily_trades += 1
             # Enhanced telegram notification
+            wib_now = (datetime.utcnow() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S')
             telegram.send_message(
                 f"🚀 *ENTRY EXECUTED*\n"
                 f"Order ID: {order_id}\n"
@@ -614,7 +615,8 @@ class EnhancedICTTrader:
                 f"🎯 TP2: ${signal.tp2:.2f}\n"
                 f"📊 Size: {position_size}\n"
                 f"💹 Market Vol: {self.market_volatility:.2f}%\n"
-                f"🔢 Daily Trades: {self.daily_trades}/{self.max_daily_trades}"
+                f"🔢 Daily Trades: {self.daily_trades}/{self.max_daily_trades}\n"
+                f"🕒 Waktu: {wib_now} WIB"
             )
             # Log equity after entry
             self.log_equity(event="ENTRY")
@@ -809,12 +811,14 @@ class EnhancedICTTrader:
         self.activate_trailing_stop_enhanced(position)
         
         if not safe_get(position, 'notifications', default={})['tp1_notified']:
+            wib_now = (datetime.utcnow() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S')
             telegram.send_message(
                 f"🎯 *TP1 HIT!*\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"💰 70% position closed at ${safe_get(position, 'tp1', default=0):.2f}\n"
                 f"🔄 Trailing stop activated for remaining 30%\n"
-                f"📊 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}"
+                f"📊 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}\n"
+                f"🕒 Waktu: {wib_now} WIB"
             )
             self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['tp1_notified'] = True
         # Log equity after TP1
@@ -826,12 +830,14 @@ class EnhancedICTTrader:
         
         if not safe_get(position, 'notifications', default={})['tp2_notified']:
             pnl = self._calculate_position_pnl(position)
+            wib_now = (datetime.utcnow() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S')
             telegram.send_message(
                 f"🎯 *TP2 HIT!*\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"💰 Full position closed at ${safe_get(position, 'tp2', default=0):.2f}\n"
                 f"🏆 Maximum profit achieved!\n"
-                f"📈 Estimated PnL: ${pnl:.2f}"
+                f"📈 Estimated PnL: ${pnl:.2f}\n"
+                f"🕒 Waktu: {wib_now} WIB"
             )
             self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['tp2_notified'] = True
             
@@ -847,12 +853,14 @@ class EnhancedICTTrader:
         """Handle SL hit event"""
         pnl = self._calculate_position_pnl(position)
         
+        wib_now = (datetime.utcnow() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S')
         telegram.send_message(
             f"🛑 *STOP LOSS HIT!*\n"
             f"📌 PAIR: {self.symbol}\n"
             f"⚠️ Position closed at ${safe_get(position, 'sl', default=0):.2f}\n"
             f"🛡️ Capital protected\n"
-            f"📉 Estimated PnL: ${pnl:.2f}"
+            f"📉 Estimated PnL: ${pnl:.2f}\n"
+            f"🕒 Waktu: {wib_now} WIB"
         )
         self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['sl_notified'] = True
         # Log equity after SL
@@ -921,12 +929,14 @@ class EnhancedICTTrader:
                 
                 # Send notification
                 if not safe_get(position, 'notifications', default={})['trailing_notified']:
+                    wib_now = (datetime.utcnow() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S')
                     telegram.send_message(
                         f"🔄 *TRAILING STOP ACTIVATED*\n"
                         f"📌 PAIR: {self.symbol}\n"
                         f"📊 Remaining size: {remaining_size}\n"
                         f"🎯 Callback rate: {callback_rate:.1f}%\n"
-                        f"💹 Market volatility: {self.market_volatility:.2f}%"
+                        f"💹 Market volatility: {self.market_volatility:.2f}%\n"
+                        f"🕒 Waktu: {wib_now} WIB"
                     )
                     self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['trailing_notified'] = True
                     
