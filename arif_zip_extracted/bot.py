@@ -69,7 +69,7 @@ class ICTBot:
                             }
                             self.strategy.on_new_candle(symbol, candle, self.analyzer)
         finally:
-            await client.close()
+            await client.aclose()
 
     def start(self):
         """Initialize and start the bot (websocket version)"""
