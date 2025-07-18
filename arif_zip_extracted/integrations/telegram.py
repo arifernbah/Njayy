@@ -283,8 +283,10 @@ class TelegramBot:
         """Send custom keyboard with main menu commands"""
         keyboard = {
             "keyboard": [
-                [{"text": "/status"}, {"text": "/balance"}],
-                [{"text": "/drawdown"}, {"text": "/help"}, {"text": "/shutdown"}]
+                [{"text": "/status"}, {"text": "/balance"}, {"text": "/drawdown"}],
+                [{"text": "/summary"}, {"text": "/settings"}, {"text": "/uptime"}],
+                [{"text": "/pause"}, {"text": "/resume"}, {"text": "/help"}],
+                [{"text": "/shutdown"}]
             ],
             "resize_keyboard": True,
             "one_time_keyboard": False
