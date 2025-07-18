@@ -642,7 +642,10 @@ class ICTStrategy:
         self.ohlcv_data[symbol] = df
         # Jalankan analisis sinyal jika cukup data
         if len(df) >= 50:
-            bias = None  # Bias bisa diambil dari analyzer jika perlu
+            bias = self.analyzer.analyze_bias(symbol)
+            if not bias or 'strength' not in bias or 'regime' not in bias:
+                logger.warning(f"Skip signal analysis for {symbol}: bias is None or missing key")
+                return
             signals = self.find_signals(bias, symbol)
             if signals:
                 trader = EnhancedICTTrader()
