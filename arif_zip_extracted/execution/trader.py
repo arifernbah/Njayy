@@ -132,6 +132,14 @@ class EnhancedICTTrader:
         except Exception as e:
             from utils.logger import logger
             logger.error(f"Failed to restore open positions/orders on startup: {e}")
+        # === Log initial balance at startup ===
+        try:
+            balance = self.get_account_balance()
+            logger.info(f"[STARTUP] Initial balance: {balance:.2f} USDT")
+            with open("equity.log", "a") as f:
+                f.write(f"[{datetime.utcnow()}] STARTUP BALANCE: {balance:.2f} USDT\n")
+        except Exception as e:
+            logger.error(f"[STARTUP] Failed to log initial balance: {e}")
 
     def _monitoring_loop(self):
         """Background monitoring for health checks and maintenance"""
