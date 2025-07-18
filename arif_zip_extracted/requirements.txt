@@ -1,9 +1,10 @@
 # Stable requirements for ICT Trading Bot
 binance==1.0.17
+python-binance>=1.0.17
 pandas==2.2.2
 numpy==1.26.4
 requests==2.31.0
 python-dotenv==1.0.1
-# Optional: for logging enhancements
-loguru==0.7.2
-python-binance>=1.0.17
+loguru==0.7.2  # Optional: for logging enhancements
+aiohttp>=3.8.1  # For async websocket/binance
+websockets>=10.4  # For async websocket/binance
