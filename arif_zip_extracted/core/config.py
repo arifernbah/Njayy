@@ -10,6 +10,7 @@ class Config:
         # API Credentials
         self.BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
         self.BINANCE_SECRET = os.getenv('BINANCE_SECRET')
+        self.BINANCE_API_SECRET = os.getenv('BINANCE_API_SECRET', os.getenv('BINANCE_SECRET'))
         
         # Telegram Config
         self.TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
