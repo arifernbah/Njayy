@@ -620,6 +620,7 @@ class ICTStrategy:
 
     def on_new_candle(self, symbol, candle):
         import pandas as pd
+        from execution.trader import EnhancedICTTrader
         # Inisialisasi data historis jika belum ada
         if symbol not in self.ohlcv_data or self.ohlcv_data[symbol].empty:
             self.initialize_ohlcv_data(symbol, interval='15m', limit=200)  # interval bisa diambil dari config
@@ -627,7 +628,6 @@ class ICTStrategy:
         df = self.ohlcv_data[symbol]
         new_row = pd.DataFrame([candle])
         df = pd.concat([df, new_row], ignore_index=True)
-        # Jaga rolling window (misal 200 bar)
         if len(df) > 200:
             df = df.iloc[-200:]
         self.ohlcv_data[symbol] = df
@@ -636,8 +636,10 @@ class ICTStrategy:
             bias = None  # Bias bisa diambil dari analyzer jika perlu
             signals = self.find_signals(bias, symbol)
             if signals:
+                trader = EnhancedICTTrader()
+                trader.symbol = symbol
                 for signal in signals:
-                    pass  # TODO: Integrasi ke eksekusi order
+                    trader.execute_entry_enhanced(signal)
 
 
 class Signal:
