@@ -5,6 +5,7 @@ import requests
 class Config:
     def __init__(self):
         load_dotenv()
+        self.DEFAULT_INTERVAL = os.getenv('DEFAULT_INTERVAL', '15m')
         
         # API Credentials
         self.BINANCE_API_KEY = os.getenv('BINANCE_API_KEY')
