@@ -10,6 +10,13 @@ import os
 from binance import AsyncClient, BinanceSocketManager
 import asyncio
 
+def safe_get(d, *keys, default=None):
+    for k in keys:
+        if not isinstance(d, dict) or k not in d:
+            return default
+        d = d[k]
+    return d
+
 class ICTBot:
     def __init__(self):
         self.author = "arifernbah1"
@@ -48,16 +55,16 @@ class ICTBot:
                 res = await stream.recv()
                 if res and 'data' in res and 'k' in res['data']:
                     kline = res['data']['k']
-                    if kline['x']:  # Hanya proses saat candle close
-                        symbol = res['data']['s']
+                    if safe_get(kline, 'x', default=False):  # Hanya proses saat candle close
+                        symbol = safe_get(res, 'data', 's', default='')
                         candle = {
-                            'timestamp': kline['t'],
-                            'open': float(kline['o']),
-                            'high': float(kline['h']),
-                            'low': float(kline['l']),
-                            'close': float(kline['c']),
-                            'volume': float(kline['v']),
-                            'close_time': kline['T']
+                            'timestamp': safe_get(kline, 't', default=0),
+                            'open': float(safe_get(kline, 'o', default=0)),
+                            'high': float(safe_get(kline, 'h', default=0)),
+                            'low': float(safe_get(kline, 'l', default=0)),
+                            'close': float(safe_get(kline, 'c', default=0)),
+                            'volume': float(safe_get(kline, 'v', default=0)),
+                            'close_time': safe_get(kline, 'T', default=0)
                         }
                         self.strategy.on_new_candle(symbol, candle)
                         # Bisa tambahkan trigger analisis/eksekusi di sini
@@ -86,7 +93,7 @@ class ICTBot:
                 self.trader.symbol = pair  # Set symbol untuk multi-pair
                 # ✅ FIXED: Pass symbol parameter to analyze_bias
                 bias = self.analyzer.analyze_bias(pair)
-                if not bias['valid']:
+                if not safe_get(bias, 'valid', default=False):
                     logger.warning(f"Invalid bias for {pair}")
                     continue
                 
@@ -152,9 +159,9 @@ class ICTBot:
                 signal.strength >= 8 and
                 signal.bias >= 7 and
                 signal.regime >= 7 and
-                self.filters['vol_range'][0] <= signal.volatility <= self.filters['vol_range'][1] and
+                safe_get(self.filters, 'vol_range', default=[0,0])[0] <= signal.volatility <= safe_get(self.filters, 'vol_range', default=[0,0])[1] and
                 # ✅ NEW: ICT Quality checks
-                signal.quality_score >= self.filters['min_quality_score'] and  # Minimum quality score from .env
+                signal.quality_score >= safe_get(self.filters, 'min_quality_score', default=0) and  # Minimum quality score from .env
                 signal.validate_levels()  # Enhanced validation
             )
             if valid and pair:
@@ -196,20 +203,20 @@ class ICTBot:
         """Calculate risk based on account conditions"""
         try:
             # Default risk
-            risk = self.risk_management['default_risk']
+            risk = safe_get(self.risk_management, 'default_risk', default=0)
             
             # Check drawdown
             if self.trader.get_drawdown() > 5:
-                risk = self.risk_management['reduced_risk']
+                risk = safe_get(self.risk_management, 'reduced_risk', default=0)
             
             # Check consecutive losses
             if self.trader.get_consecutive_losses() >= 2:
-                risk = self.risk_management['minimum_risk']
+                risk = safe_get(self.risk_management, 'minimum_risk', default=0)
                 
             return risk
         except Exception as e:
             logger.error(f"Risk calculation error: {e}")
-            return self.risk_management['minimum_risk']
+            return safe_get(self.risk_management, 'minimum_risk', default=0)
 
     def send_startup_message(self):
         """Send startup message to Telegram"""
@@ -226,8 +233,8 @@ class ICTBot:
                 f"Hari ini siap trading, jangan galak-galak ya~\n\n"
                 f"Pairs: {pairs}\n"
                 f"Target sinyal: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}/hari\n"
-                f"Risk: {self.risk_management['default_risk']*100:.0f}% per trade\n"
-                f"Quality minimal: {self.filters['min_quality_score']}\n\n"
+                f"Risk: {safe_get(self.risk_management, 'default_risk', default=0)*100:.0f}% per trade\n"
+                f"Quality minimal: {safe_get(self.filters, 'min_quality_score', default=0)}\n\n"
                 f"Status: Lagi mantau market, siap cari cuan! 🚦\n\n"
                 f"(Psst... Kalau aku error, jangan salahin aku, salahin market aja 😆)"
             )
@@ -246,7 +253,7 @@ class ICTBot:
                 "performance": self.trader.get_performance()
             }
             
-            if status['daily_trades'] >= self.risk_management['max_trades']:
+            if safe_get(self.risk_management, 'max_trades', default=0) <= status['daily_trades']:
                 logger.info("Daily trade limit reached")
         except Exception as e:
             logger.error(f"Status update error: {e}")
@@ -278,16 +285,16 @@ class ICTBot:
         s = self
         settings = (
             f"⚙️ *BOT SETTINGS*\n"
-            f"Risk: {s.risk_management['default_risk']*100:.2f}%\n"
+            f"Risk: {safe_get(s.risk_management, 'default_risk', default=0)*100:.2f}%\n"
             f"Leverage: {s.trader.leverage}x\n"
-            f"Max Daily Trades: {s.risk_management['max_trades']}\n"
-            f"Max Concurrent Trades: {s.risk_management['max_concurrent']}\n"
+            f"Max Daily Trades: {safe_get(s.risk_management, 'max_trades', default=0)}\n"
+            f"Max Concurrent Trades: {safe_get(s.risk_management, 'max_concurrent', default=0)}\n"
             f"Drawdown Limit: {config.MAX_DRAWDOWN}%\n"
-            f"Min Quality Score: {s.filters['min_quality_score']}\n"
-            f"Min Signal Strength: {s.filters['signal_strength']}\n"
-            f"Min Bias Strength: {s.filters['bias_strength']}\n"
-            f"Min Regime Score: {s.filters['regime_score']}\n"
-            f"Volatility Range: {s.filters['vol_range'][0]} - {s.filters['vol_range'][1]}\n"
+            f"Min Quality Score: {safe_get(s.filters, 'min_quality_score', default=0)}\n"
+            f"Min Signal Strength: {safe_get(s.filters, 'signal_strength', default=0)}\n"
+            f"Min Bias Strength: {safe_get(s.filters, 'bias_strength', default=0)}\n"
+            f"Min Regime Score: {safe_get(s.filters, 'regime_score', default=0)}\n"
+            f"Volatility Range: {safe_get(s.filters, 'vol_range', default=[0,0])[0]} - {safe_get(s.filters, 'vol_range', default=[0,0])[1]}\n"
             f"Session: London {config.LONDON_START}-{config.LONDON_END}, NY {config.NY_START}-{config.NY_END}, Asia {config.ASIAN_START}-{config.ASIAN_END}\n"
             f"Pairs: {', '.join(self.trading_pairs)}\n"
             f"Loop Interval: {config.LOOP_INTERVAL}s\n"
