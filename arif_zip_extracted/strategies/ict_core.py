@@ -189,6 +189,8 @@ class ICTStrategy:
         """Get OHLCV data from Binance"""
         try:
             klines = self.client.futures_klines(symbol=symbol, interval=interval, limit=limit)
+            if not klines or len(klines) == 0:
+                logger.warning(f"[DATA] OHLCV kosong untuk {symbol} interval {interval}")
             df = pd.DataFrame(klines, columns=[
                 'timestamp', 'open', 'high', 'low', 'close',
                 'volume', 'close_time', 'quote_asset_volume',
@@ -223,7 +225,7 @@ class ICTStrategy:
             
             return df
         except Exception as e:
-            logger.error(f"Failed to get OHLCV for {symbol}: {e}")
+            logger.error(f"[DATA] Failed to get OHLCV for {symbol}: {e}")
             return pd.DataFrame()
 
     def calculate_atr(self, df, period=14):
@@ -644,7 +646,7 @@ class ICTStrategy:
         if len(df) >= 50:
             bias = self.analyzer.analyze_bias(symbol)
             if not bias or 'strength' not in bias or 'regime' not in bias:
-                logger.warning(f"Skip signal analysis for {symbol}: bias is None or missing key")
+                logger.warning(f"[BIAS] Skip signal analysis for {symbol}: bias is None atau key hilang. Data candle: {len(df)} bar.")
                 return
             signals = self.find_signals(bias, symbol)
             if signals:
