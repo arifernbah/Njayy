@@ -612,12 +612,18 @@ class ICTStrategy:
             logger.error(f"Signal creation error: {e}")
             return None
 
+    def initialize_ohlcv_data(self, symbol, interval, limit=200):
+        """Ambil data historis OHLCV dari REST API Binance untuk inisialisasi rolling DataFrame."""
+        df = self.get_ohlcv(symbol, interval=interval, limit=limit)
+        if not df.empty:
+            self.ohlcv_data[symbol] = df
+
     def on_new_candle(self, symbol, candle):
-        """Handler untuk candle baru dari websocket. Akan dipanggil setiap ada candle close baru."""
         import pandas as pd
+        # Inisialisasi data historis jika belum ada
+        if symbol not in self.ohlcv_data or self.ohlcv_data[symbol].empty:
+            self.initialize_ohlcv_data(symbol, interval='15m', limit=200)  # interval bisa diambil dari config
         # Update rolling DataFrame OHLCV
-        if symbol not in self.ohlcv_data:
-            self.ohlcv_data[symbol] = pd.DataFrame(columns=['timestamp','open','high','low','close','volume','close_time'])
         df = self.ohlcv_data[symbol]
         new_row = pd.DataFrame([candle])
         df = pd.concat([df, new_row], ignore_index=True)
@@ -627,15 +633,10 @@ class ICTStrategy:
         self.ohlcv_data[symbol] = df
         # Jalankan analisis sinyal jika cukup data
         if len(df) >= 50:
-            # Gunakan df terbaru untuk analisis
-            # (Bisa panggil find_signals atau logika lain sesuai strategi)
-            # Contoh:
             bias = None  # Bias bisa diambil dari analyzer jika perlu
             signals = self.find_signals(bias, symbol)
-            # Eksekusi sinyal jika ada
             if signals:
                 for signal in signals:
-                    # Validasi dan eksekusi (bisa diintegrasikan ke bot/trader)
                     pass  # TODO: Integrasi ke eksekusi order
 
 
