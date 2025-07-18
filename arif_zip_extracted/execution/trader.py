@@ -48,76 +48,84 @@ class EnhancedICTTrader:
 
         # Restore open positions from Binance Futures
         try:
-            open_positions = self.client.futures_position_information()
+            logger.info("[INIT] Waiting 30 seconds before restoring open positions...")
+            time.sleep(30)
+            try:
+                open_positions = self.client.futures_position_information()
+            except Exception as e:
+                logger.error(f"[INIT] Error restoring open positions: {e}")
+                open_positions = []
             for pos in open_positions:
-                if abs(float(pos['positionAmt'])) > 0:
-                    symbol = pos['symbol']
-                    entry = float(pos['entryPrice'])
-                    size = abs(float(pos['positionAmt']))
-                    direction = 'BUY' if float(pos['positionAmt']) > 0 else 'SELL'
-                    # Fetch open orders for this symbol
-                    open_orders = self.client.futures_get_open_orders(symbol=symbol)
-                    sl_order = None
-                    tp1_order = None
-                    tp2_order = None
-                    # Identify SL/TP orders
-                    limit_orders = [o for o in open_orders if o['type'] == 'LIMIT']
-                    stop_orders = [o for o in open_orders if o['type'] == 'STOP_MARKET']
-                    # SL: STOP_MARKET, side opposite, stopPrice < entry (BUY) or > entry (SELL)
-                    for o in stop_orders:
-                        if (direction == 'BUY' and float(o['stopPrice']) < entry) or (direction == 'SELL' and float(o['stopPrice']) > entry):
-                            sl_order = o
-                    # TP: LIMIT, side opposite, price > entry (BUY) or < entry (SELL)
-                    tp_candidates = []
-                    for o in limit_orders:
-                        if (direction == 'BUY' and float(o['price']) > entry) or (direction == 'SELL' and float(o['price']) < entry):
-                            tp_candidates.append(o)
-                    # Ambil dua TP terdekat dari entry
-                    tp_candidates.sort(key=lambda x: abs(float(x['price']) - entry))
-                    if len(tp_candidates) > 0:
-                        tp1_order = tp_candidates[0]
-                    if len(tp_candidates) > 1:
-                        tp2_order = tp_candidates[1]
-                    # Trailing stop
-                    trailing_order = None
-                    for o in open_orders:
-                        if o['type'] == 'TRAILING_STOP_MARKET':
-                            trailing_order = o
-                    # SL+ (breakeven): SL order di harga entry
-                    sl_moved_to_be = False
-                    if sl_order and abs(float(sl_order['stopPrice']) - entry) < 1e-6:
-                        sl_moved_to_be = True
-                    trailing_active = trailing_order is not None
-                    self.active_positions[symbol] = {
-                        'symbol': symbol,
-                        'entry': entry,
-                        'sl': float(sl_order['stopPrice']) if sl_order else None,
-                        'tp1': float(tp1_order['price']) if tp1_order else None,
-                        'tp2': float(tp2_order['price']) if tp2_order else None,
-                        'size': size,
-                        'direction': direction,
-                        'opened_at': None,
-                        'orders': {
-                            'sl_order': sl_order,
-                            'tp1_order': tp1_order,
-                            'tp2_order': tp2_order,
-                            'trailing_order': trailing_order
-                        },
-                        'sl_moved_to_be': sl_moved_to_be,
-                        'tp1_hit': False,
-                        'tp2_hit': False,
-                        'trailing_active': trailing_active,
-                        'market_volatility_at_entry': None,
-                        'last_price_check': None,
-                        'price_check_failures': 0,
-                        'notifications': {
-                            'tp1_notified': False,
-                            'tp2_notified': False,
-                            'sl_notified': False,
-                            'trailing_notified': False,
-                            'sl_be_notified': False
+                try:
+                    if abs(float(pos['positionAmt'])) > 0:
+                        symbol = pos['symbol']
+                        entry = float(pos['entryPrice'])
+                        size = abs(float(pos['positionAmt']))
+                        direction = 'BUY' if float(pos['positionAmt']) > 0 else 'SELL'
+                        # Fetch open orders for this symbol
+                        try:
+                            open_orders = self.client.futures_get_open_orders(symbol=symbol)
+                        except Exception as e:
+                            logger.error(f"[INIT] Error fetching open orders for {symbol}: {e}")
+                            open_orders = []
+                        sl_order = None
+                        tp1_order = None
+                        tp2_order = None
+                        # Identify SL/TP orders
+                        limit_orders = [o for o in open_orders if o.get('type') == 'LIMIT']
+                        stop_orders = [o for o in open_orders if o.get('type') == 'STOP_MARKET']
+                        for o in stop_orders:
+                            if (direction == 'BUY' and float(o['stopPrice']) < entry) or (direction == 'SELL' and float(o['stopPrice']) > entry):
+                                sl_order = o
+                        tp_candidates = []
+                        for o in limit_orders:
+                            if (direction == 'BUY' and float(o['price']) > entry) or (direction == 'SELL' and float(o['price']) < entry):
+                                tp_candidates.append(o)
+                        tp_candidates.sort(key=lambda x: abs(float(x['price']) - entry))
+                        if len(tp_candidates) > 0:
+                            tp1_order = tp_candidates[0]
+                        if len(tp_candidates) > 1:
+                            tp2_order = tp_candidates[1]
+                        trailing_order = None
+                        for o in open_orders:
+                            if o.get('type') == 'TRAILING_STOP_MARKET':
+                                trailing_order = o
+                        sl_moved_to_be = False
+                        if sl_order and abs(float(sl_order['stopPrice']) - entry) < 1e-6:
+                            sl_moved_to_be = True
+                        trailing_active = trailing_order is not None
+                        self.active_positions[symbol] = {
+                            'symbol': symbol,
+                            'entry': entry,
+                            'sl': float(sl_order['stopPrice']) if sl_order else None,
+                            'tp1': float(tp1_order['price']) if tp1_order else None,
+                            'tp2': float(tp2_order['price']) if tp2_order else None,
+                            'size': size,
+                            'direction': direction,
+                            'opened_at': None,
+                            'orders': {
+                                'sl_order': sl_order,
+                                'tp1_order': tp1_order,
+                                'tp2_order': tp2_order,
+                                'trailing_order': trailing_order
+                            },
+                            'sl_moved_to_be': sl_moved_to_be,
+                            'tp1_hit': False,
+                            'tp2_hit': False,
+                            'trailing_active': trailing_active,
+                            'market_volatility_at_entry': None,
+                            'last_price_check': None,
+                            'price_check_failures': 0,
+                            'notifications': {
+                                'tp1_notified': False,
+                                'tp2_notified': False,
+                                'sl_notified': False,
+                                'trailing_notified': False,
+                                'sl_be_notified': False
+                            }
                         }
-                    }
+                except Exception as e:
+                    logger.error(f"[INIT] Error processing open position: {e}")
             if self.active_positions:
                 from integrations.telegram import telegram
                 telegram.send_message(f"♻️ Bot restart: {len(self.active_positions)} open position(s) with SL/TP restored and will be monitored.")
