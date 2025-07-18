@@ -6,6 +6,13 @@ from utils.logger import logger
 import time
 import threading
 
+def safe_get(d, *keys, default=None):
+    for k in keys:
+        if not isinstance(d, dict) or k not in d:
+            return default
+        d = d[k]
+    return d
+
 class TelegramBot:
     def __init__(self):
         self.token = config.TELEGRAM_TOKEN
@@ -360,11 +367,3 @@ class TelegramBot:
 
 # Create global telegram instance
 telegram = TelegramBot()
-
-# Contoh perbaikan pada akses bias dan hasil API Telegram
-def safe_get(d, *keys, default=None):
-    for k in keys:
-        if not isinstance(d, dict) or k not in d:
-            return default
-        d = d[k]
-    return d
