@@ -315,6 +315,10 @@ if __name__ == "__main__":
         if str(chat_id) != str(config.TELEGRAM_CHAT_ID):
             telegram.send_message("⚠️ Unauthorized access.")
             return
+        if text == "/start":
+            telegram.send_message("👋 Hai! Aku Arif_Bot, siap membantu trading kamu. Ketik /help untuk daftar perintah.")
+            telegram.send_main_menu()
+            return
         if text == "/status":
             telegram.send_message("✅ Bot status: Aktif dan berjalan")
         elif text == "/balance":
