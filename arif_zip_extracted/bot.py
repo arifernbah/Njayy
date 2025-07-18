@@ -67,7 +67,11 @@ class ICTBot:
                                 'volume': float(safe_get(kline, 'v', default=0)),
                                 'close_time': safe_get(kline, 'T', default=0)
                             }
-                            self.strategy.on_new_candle(symbol, candle, self.analyzer)
+                            from datetime import datetime
+                            candle_close_time = datetime.utcnow()
+                            logger.info(f"[ENTRY TIMING] Candle close received at {candle_close_time.isoformat()} for {symbol}")
+                            # Trigger entry (pastikan proses ini secepat mungkin)
+                            self.strategy.on_new_candle(symbol, candle, self.analyzer, candle_close_time)
         finally:
             await client.aclose()
 

@@ -629,7 +629,7 @@ class ICTStrategy:
         if not df.empty:
             self.ohlcv_data[symbol] = df
 
-    def on_new_candle(self, symbol, candle, analyzer):
+    def on_new_candle(self, symbol, candle, analyzer, candle_close_time=None):
         import pandas as pd
         from execution.trader import EnhancedICTTrader
         logger.info(f"[SCAN] Candle baru diterima untuk {symbol} pada {candle['timestamp']}")
@@ -658,7 +658,11 @@ class ICTStrategy:
                 logger.info(f"[SCAN] {len(signals)} sinyal ditemukan untuk {symbol}, eksekusi...")
                 trader = EnhancedICTTrader()
                 trader.symbol = symbol
+                from datetime import datetime
                 for signal in signals:
+                    order_exec_time = datetime.utcnow()
+                    delay = (order_exec_time - candle_close_time).total_seconds() if candle_close_time else None
+                    logger.info(f"[ENTRY TIMING] Order executed at {order_exec_time.isoformat()} for {symbol}. Delay from candle close: {delay} seconds")
                     trader.execute_entry_enhanced(signal)
             else:
                 logger.info(f"[SCAN] Tidak ada sinyal valid untuk {symbol}")
