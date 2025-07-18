@@ -195,21 +195,16 @@ class ICTBot:
             from datetime import timedelta
             utc_now = datetime.utcnow()
             wib_now = utc_now + timedelta(hours=7)
-            pairs = self.trading_pairs
-            if len(pairs) > 5:
-                pairs_str = ', '.join(pairs[:5]) + '\n  ' + ', '.join(pairs[5:])
-            else:
-                pairs_str = ', '.join(pairs)
+            pairs = ', '.join(self.trading_pairs)
             msg = (
-                f"🚀 ICT Bot v8.1 Siap Beraksi!\n\n"
-                f"Author: {self.author}\n"
-                f"Start: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB\n\n"
-                f"Pengaturan Bot:\n"
-                f"- Pairs: {pairs_str}\n"
-                f"- Target Sinyal: {self.signal_target} per hari\n"
-                f"- Min Score: {self.filters['signal_strength']}\n"
-                f"- Risk per Trade: {self.risk_management['default_risk']*100}%\n\n"
-                f"Status: Bot aktif & siap trading!"
+                f"👋 Hai, aku Arif_Bot!  \n"
+                f"Hari ini siap trading, jangan galak-galak ya~\n\n"
+                f"Pairs: {pairs}\n"
+                f"Target sinyal: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}/hari\n"
+                f"Risk: {self.risk_management['default_risk']*100:.0f}% per trade\n"
+                f"Quality minimal: {self.filters['min_quality_score']}\n\n"
+                f"Status: Lagi mantau market, siap cari cuan! 🚦\n\n"
+                f"(Psst... Kalau aku error, jangan salahin aku, salahin market aja 😆)"
             )
             telegram.send_message(msg)
             telegram.send_main_menu()  # Show main menu keyboard after startup
