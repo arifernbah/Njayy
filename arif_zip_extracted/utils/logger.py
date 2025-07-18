@@ -47,7 +47,7 @@ if not logger.handlers:
                 if record.levelno >= logging.ERROR:
                     # Gunakan anti-spam error
                     send_telegram_error(f"🚨 BOT ERROR\n{log_entry}", error_type=record.levelname, cooldown=300)
-            except:
+            except Exception as e:
                 pass
 
     telegram_handler = TelegramLogHandler()

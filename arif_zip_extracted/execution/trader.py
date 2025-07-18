@@ -520,44 +520,39 @@ class EnhancedICTTrader:
             # Circuit breaker check
             if not self.check_circuit_breaker():
                 return False
-
-            # ✅ AUTO SET LEVERAGE VIA API
+            # AUTO SET LEVERAGE VIA API
             self.set_leverage_api(self.symbol, self.leverage)
-
             # Calculate adaptive position size
             position_size = self.calculate_adaptive_position_size(signal)
             if position_size <= 0:
                 logger.error("Invalid position size calculated")
                 return False
-
             # Check margin
             if not self.check_margin_sufficient(position_size, signal.entry):
                 return False
-
             side = 'BUY' if signal.direction == 'BUY' else 'SELL'
             opposite_side = 'SELL' if side == 'BUY' else 'BUY'
-
             # 1. Place MARKET entry order
             entry_order = self.place_market_order_enhanced(side, position_size)
             if not entry_order:
                 logger.error("Failed to place entry order")
                 return False
-
-            # 2. Place STOP_MARKET for SL
+            # 2. Place STOP_MARKET for SL (cek dulu, cancel jika sudah ada)
+            sl_order = None
+            if 'orders' in entry_order and entry_order['orders'].get('sl_order'):
+                # Cancel SL lama jika ada
+                self.cancel_all_orders({'orders': {'sl_order': entry_order['orders']['sl_order']}})
             sl_order = self.place_stop_market_order_enhanced(opposite_side, signal.sl, position_size)
             if not sl_order:
                 logger.warning("Failed to place SL order - CRITICAL!")
                 # Cancel entry if SL placement fails
                 self.cancel_all_orders({'orders': {'entry': entry_order}})
                 return False
-
             # 3. Place LIMIT orders for TP1 (70%) and TP2 (30%)
             tp1_size = round(position_size * 0.7, 4)
             tp2_size = round(position_size * 0.3, 4)
-
             tp1_order = self.place_limit_order_enhanced(opposite_side, signal.tp1, tp1_size)
             tp2_order = self.place_limit_order_enhanced(opposite_side, signal.tp2, tp2_size)
-
             # 4. Track the position
             self.track_position_enhanced(signal, entry_order, position_size, {
                 'sl_order': sl_order,
@@ -565,9 +560,7 @@ class EnhancedICTTrader:
                 'tp2_order': tp2_order,
                 'entry_order': entry_order
             })
-
             self.daily_trades += 1
-            
             # Enhanced telegram notification
             telegram.send_message(
                 f"🚀 *ENTRY EXECUTED*\n"
@@ -583,9 +576,7 @@ class EnhancedICTTrader:
             )
             # Log equity after entry
             self.log_equity(event="ENTRY")
-            
             return True
-            
         except Exception as e:
             logger.error(f"Execute entry error: {e}")
             return False
@@ -740,13 +731,12 @@ class EnhancedICTTrader:
     def move_sl_to_breakeven_enhanced(self, position):
         """Enhanced SL+ movement with validation"""
         try:
-            # Cancel existing SL order
+            # Cancel existing SL order jika ada
             if safe_get(position, 'orders', default={}).get('sl_order'):
                 self.client.futures_cancel_order(
                     symbol=self.symbol,
                     orderId=safe_get(safe_get(position, 'orders', default={})['sl_order'], 'orderId', default=0)
                 )
-
             # Place new SL at break-even
             opposite_side = 'SELL' if safe_get(position, 'direction', default='') == 'BUY' else 'BUY'
             new_sl_order = self.place_stop_market_order_enhanced(
@@ -754,11 +744,9 @@ class EnhancedICTTrader:
                 safe_get(position, 'entry', default=0),
                 safe_get(position, 'size', default=0)
             )
-            
             if new_sl_order:
                 self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['orders']['sl_order'] = new_sl_order
                 self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['sl_moved_to_be'] = True
-                
                 # Send notification
                 if not safe_get(position, 'notifications', default={})['sl_be_notified']:
                     telegram.send_message(
@@ -768,7 +756,6 @@ class EnhancedICTTrader:
                         f"💹 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}"
                     )
                     self.active_positions[safe_get(position, 'symbol', default='')][pos_id]['notifications']['sl_be_notified'] = True
-                    
         except Exception as e:
             logger.error(f"Failed to move SL to breakeven: {e}")
 
@@ -809,7 +796,7 @@ class EnhancedICTTrader:
         self.performance['consecutive_losses'] = 0
         self.performance['total_pnl'] += pnl
         
-        # Remove position
+        # Remove position dari active_positions
         del self.active_positions[safe_get(position, 'symbol', default='')][pos_id]
 
     def _handle_sl_hit(self, pos_id, position):
@@ -832,7 +819,7 @@ class EnhancedICTTrader:
         self.performance['consecutive_losses'] += 1
         self.performance['total_pnl'] += pnl
         
-        # Remove position
+        # Remove position dari active_positions
         del self.active_positions[safe_get(position, 'symbol', default='')][pos_id]
 
     def _calculate_position_pnl(self, position):
@@ -848,7 +835,8 @@ class EnhancedICTTrader:
                 pnl = (entry_price - current_price) * size
                 
             return pnl
-        except:
+        except Exception as e:
+            logger.error(f"Failed to calculate PnL: {e}")
             return 0.0
 
     def activate_trailing_stop_enhanced(self, position):

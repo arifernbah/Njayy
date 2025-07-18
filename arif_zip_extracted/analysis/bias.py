@@ -115,7 +115,8 @@ class BiasAnalyzer:
             
             true_range = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
             return true_range.rolling(window=period).mean()
-        except:
+        except Exception as e:
+            logger.error(f"ATR calculation error: {e}")
             return pd.Series([0.001] * len(df))
 
     def analyze_enhanced_structure(self, df):
