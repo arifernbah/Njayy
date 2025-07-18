@@ -461,19 +461,33 @@ class EnhancedICTTrader:
             logger.error(f"Limit order error: {e}")
             return None
 
+    def set_leverage_api(self, symbol, leverage=None):
+        """Set leverage for the symbol via Binance API"""
+        try:
+            leverage = leverage or self.leverage
+            result = self.client.futures_change_leverage(symbol=symbol, leverage=int(leverage))
+            logger.info(f"Leverage for {symbol} set to {leverage}x via API. Response: {result}")
+            return result
+        except Exception as e:
+            logger.error(f"Failed to set leverage for {symbol} via API: {e}")
+            return None
+
     def execute_entry_enhanced(self, signal):
-        """Enhanced entry execution with comprehensive checks"""
+        """Enhanced entry execution with comprehensive checks and auto leverage"""
         try:
             # Circuit breaker check
             if not self.check_circuit_breaker():
                 return False
-                
+
+            # ✅ AUTO SET LEVERAGE VIA API
+            self.set_leverage_api(self.symbol, self.leverage)
+
             # Calculate adaptive position size
             position_size = self.calculate_adaptive_position_size(signal)
             if position_size <= 0:
                 logger.error("Invalid position size calculated")
                 return False
-                
+
             # Check margin
             if not self.check_margin_sufficient(position_size, signal.entry):
                 return False
