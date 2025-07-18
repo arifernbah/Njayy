@@ -5,6 +5,13 @@ from core.config import config  # ✅ Fixed import path
 import pandas as pd
 import numpy as np
 
+def safe_get(d, *keys, default=None):
+    for k in keys:
+        if not isinstance(d, dict) or k not in d:
+            return default
+        d = d[k]
+    return d
+
 class BiasAnalyzer:
     def __init__(self):
         self.author = "arifernbah1"
@@ -232,7 +239,7 @@ class BiasAnalyzer:
                 'valid': overall_bias > 35,
                 'strength': overall_bias,
                 'regime': regime,
-                'regime_score': regime['score'],
+                'regime_score': safe_get(regime, 'score', default=0),
                 'volatility': volatility,
                 'timeframe_scores': {
                     'daily': daily_score,
@@ -547,22 +554,22 @@ class BiasAnalyzer:
         try:
             bias_data = self.analyze_bias(symbol)
             
-            if not bias_data['valid']:
+            if not safe_get(bias_data, 'valid', default=False):
                 return f"❌ {symbol}: Insufficient data for analysis"
                 
             summary = f"""
 📊 **BIAS ANALYSIS - {symbol}**
 
-🎯 **Overall Bias**: {bias_data['direction']} ({bias_data['strength']:.1f}/100)
-📈 **Regime**: {bias_data['regime']['type']} ({bias_data['regime']['confidence']})
-📊 **Volatility**: {bias_data['volatility']}%
+🎯 **Overall Bias**: {safe_get(bias_data, 'direction', default='N/A')} ({safe_get(bias_data, 'strength', default=0):.1f}/100)
+📈 **Regime**: {safe_get(bias_data, 'regime', default={})['type']} ({safe_get(bias_data, 'regime', default={})['confidence']})
+📊 **Volatility**: {safe_get(bias_data, 'volatility', default=0)}%
 
 **Timeframe Breakdown:**
-• Daily: {bias_data['timeframe_scores']['daily']:.1f}
-• 4H: {bias_data['timeframe_scores']['4h']:.1f}
-• 1H: {bias_data['timeframe_scores']['1h']:.1f}
+• Daily: {safe_get(bias_data, 'timeframe_scores', default={})['daily']:.1f}
+• 4H: {safe_get(bias_data, 'timeframe_scores', default={})['4h']:.1f}
+• 1H: {safe_get(bias_data, 'timeframe_scores', default={})['1h']:.1f}
 
-**Status**: {'✅ Valid' if bias_data['valid'] else '❌ Invalid'}
+**Status**: {'✅ Valid' if safe_get(bias_data, 'valid', default=False) else '❌ Invalid'}
 """
             return summary
             
