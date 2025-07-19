@@ -567,10 +567,20 @@ class EnhancedICTTrader:
             return False
 
     def calculate_adaptive_position_size(self, signal, base_risk_percent=2):
-        """Calculate position size with volatility adjustment"""
+        """Calculate position size with volatility adjustment and small balance handling"""
         try:
             # Base calculation
             balance = self.get_account_balance()
+            
+            # For small balances, use more conservative approach
+            if balance < config.SMALL_BALANCE_THRESHOLD:
+                logger.info(f"Small balance detected: ${balance:.2f}, using conservative settings")
+                base_risk_percent = min(base_risk_percent, config.SMALL_BALANCE_RISK)
+                # Use smaller leverage for small balance
+                effective_leverage = min(self.leverage, config.SMALL_BALANCE_LEVERAGE)
+                logger.info(f"Using reduced leverage: {effective_leverage}x (original: {self.leverage}x)")
+            else:
+                effective_leverage = self.leverage
             
             # Adjust risk based on volatility
             volatility_factor = min(self.market_volatility / 100, 0.5)
@@ -589,7 +599,20 @@ class EnhancedICTTrader:
                 return 0
                 
             position_size = risk_amount / risk_per_unit
-            return round(position_size, 4)
+            
+            # Get precision for this symbol
+            precision = self.get_quantity_precision(self.symbol)
+            
+            # Round to proper precision
+            position_size = round(position_size, precision)
+            
+            # Ensure minimum position size
+            if position_size < config.MIN_POSITION_SIZE:
+                logger.warning(f"Position size too small: {position_size}, using minimum: {config.MIN_POSITION_SIZE}")
+                position_size = config.MIN_POSITION_SIZE
+            
+            logger.info(f"Calculated position size: {position_size} (precision: {precision}, balance: ${balance:.2f}, leverage: {effective_leverage}x)")
+            return position_size
             
         except Exception as e:
             logger.error(f"Position size calculation error: {e}")
@@ -688,15 +711,33 @@ class EnhancedICTTrader:
         return cancelled_orders
 
     def get_quantity_precision(self, symbol):
-        info = self.client.futures_exchange_info()
-        for s in info['symbols']:
-            if s['symbol'] == symbol:
-                for f in s['filters']:
-                    if f['filterType'] == 'LOT_SIZE':
-                        step_size = float(f['stepSize'])
-                        precision = abs(decimal.Decimal(str(step_size)).as_tuple().exponent)
-                        return precision
-        return 3  # default jika tidak ketemu
+        """Get quantity precision for symbol with enhanced error handling"""
+        try:
+            info = self.client.futures_exchange_info()
+            for s in info['symbols']:
+                if s['symbol'] == symbol:
+                    for f in s['filters']:
+                        if f['filterType'] == 'LOT_SIZE':
+                            step_size = float(f['stepSize'])
+                            if step_size == 0:
+                                logger.warning(f"Invalid step size for {symbol}: {step_size}")
+                                return 3
+                            
+                            # Calculate precision from step size
+                            precision = 0
+                            while step_size < 1:
+                                step_size *= 10
+                                precision += 1
+                            
+                            logger.info(f"Precision for {symbol}: {precision} (step size: {f['stepSize']})")
+                            return precision
+            
+            logger.warning(f"Symbol {symbol} not found in exchange info, using default precision 3")
+            return 3
+            
+        except Exception as e:
+            logger.error(f"Error getting precision for {symbol}: {e}")
+            return 3  # Safe default
 
     def place_market_order_enhanced(self, side, quantity):
         """Enhanced market order with validation"""
@@ -1446,20 +1487,39 @@ class EnhancedICTTrader:
         logger.info("Enhanced ICT Trader shutdown complete")
 
     def check_margin_sufficient(self, position_size, entry_price):
-        """Check if margin is sufficient for the trade"""
+        """Check if margin is sufficient for position with enhanced small balance handling"""
         try:
-            balance_info = self.client.futures_account_balance()
-            usdt_balance = float(next(x for x in balance_info if x["asset"] == "USDT")["balance"])
+            balance = self.get_account_balance()
             
-            # Calculate required margin
-            required_margin = (abs(position_size) * entry_price) / self.leverage
+            # Use appropriate leverage based on balance
+            if balance < config.SMALL_BALANCE_THRESHOLD:
+                effective_leverage = min(self.leverage, config.SMALL_BALANCE_LEVERAGE)
+            else:
+                effective_leverage = self.leverage
             
-            if required_margin > usdt_balance:
-                logger.warning(f"❌ Margin tidak cukup. Dibutuhkan: {required_margin:.2f}, tersedia: {usdt_balance:.2f}")
+            required_margin = (position_size * entry_price) / effective_leverage
+            
+            # For small balances, add safety buffer
+            safety_buffer = 1.1 if balance < config.SMALL_BALANCE_THRESHOLD else 1.05
+            required_margin_with_buffer = required_margin * safety_buffer
+            
+            if required_margin_with_buffer > balance:
+                logger.warning(f"❌ Margin tidak cukup. Dibutuhkan: {required_margin_with_buffer:.2f}, tersedia: {balance:.2f}")
+                
+                # Suggest alternatives for small balance
+                if balance < config.SMALL_BALANCE_THRESHOLD:
+                    logger.info(f"💡 Saran untuk balance kecil (${balance:.2f}):")
+                    logger.info(f"   - Kurangi leverage dari {self.leverage}x ke {config.SMALL_BALANCE_LEVERAGE}x")
+                    logger.info(f"   - Kurangi risk dari {config.DEFAULT_RISK}% ke {config.SMALL_BALANCE_RISK}%")
+                    logger.info(f"   - Top up balance minimal ${config.SMALL_BALANCE_THRESHOLD*2} untuk trading yang lebih aman")
+                
                 return False
+            
+            logger.info(f"✅ Margin cukup. Dibutuhkan: {required_margin_with_buffer:.2f}, tersedia: {balance:.2f} (leverage: {effective_leverage}x)")
             return True
+            
         except Exception as e:
-            logger.error(f"Gagal cek margin: {e}")
+            logger.error(f"Error checking margin: {e}")
             return False
 
     def get_drawdown(self):
