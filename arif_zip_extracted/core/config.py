@@ -75,6 +75,12 @@ class Config:
         self.ASIAN_START = os.getenv('ASIAN_START', '00:00')
         self.ASIAN_END = os.getenv('ASIAN_END', '09:00')
         
+        # Killzone Settings (from .env.template)
+        self.KILLZONE_ASIA_LONDON_START = os.getenv('KILLZONE_ASIA_LONDON_START', '08:00')
+        self.KILLZONE_ASIA_LONDON_END = os.getenv('KILLZONE_ASIA_LONDON_END', '18:00')
+        self.KILLZONE_NY_START = os.getenv('KILLZONE_NY_START', '19:00')
+        self.KILLZONE_NY_END = os.getenv('KILLZONE_NY_END', '22:00')
+        
         # Session Minimum Scores
         self.LONDON_MIN_SCORE = int(os.getenv('LONDON_MIN_SCORE', 70))
         self.NY_MIN_SCORE = int(os.getenv('NY_MIN_SCORE', 70))
@@ -83,6 +89,12 @@ class Config:
         # Bot Settings
         self.LOOP_INTERVAL = int(os.getenv('LOOP_INTERVAL', 60))  # seconds
         self.ENABLE_TELEGRAM = os.getenv('ENABLE_TELEGRAM', 'True').lower() == 'true'
+        
+        # Leverage Settings (from .env.template)
+        self.LEVERAGE = int(os.getenv('LEVERAGE', 5))
+        
+        # Logging Settings (from .env.template)
+        self.LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
         
         # Performance Targets
         self.TARGET_WIN_RATE = float(os.getenv('TARGET_WIN_RATE', 60.0))
@@ -196,6 +208,23 @@ class Config:
             'use_top_volume': self.USE_TOP_VOLUME_PAIRS,
             'count': self.TOP_VOLUME_COUNT,
             'timeframe': self.VOLUME_TIMEFRAME
+        }
+    
+    # ✅ Added method to get killzone settings
+    def get_killzone_settings(self):
+        """Get killzone configuration settings"""
+        return {
+            'asia_london_start': self.KILLZONE_ASIA_LONDON_START,
+            'asia_london_end': self.KILLZONE_ASIA_LONDON_END,
+            'ny_start': self.KILLZONE_NY_START,
+            'ny_end': self.KILLZONE_NY_END
+        }
+    
+    # ✅ Added method to get leverage settings
+    def get_leverage_settings(self):
+        """Get leverage configuration settings"""
+        return {
+            'leverage': self.LEVERAGE
         }
 
 # Create global config instance

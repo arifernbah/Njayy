@@ -487,13 +487,29 @@ class ICTStrategy:
 
     def in_killzone(self):
         """Check if current time is in ICT killzone - DIPERPANJANG"""
-        now = datetime.utcnow().time()
-        # ✅ KILLZONE YANG LEBIH PANJANG
-        london_kz = time(6, 0) <= now <= time(11, 0)  # 6:00-11:00 UTC
-        ny_kz = time(12, 0) <= now <= time(17, 0)     # 12:00-17:00 UTC
-        asian_kz = time(23, 0) <= now or now <= time(2, 0)  # 23:00-02:00 UTC
+        from core.config import config
         
-        return london_kz or ny_kz or asian_kz
+        now = datetime.utcnow().time()
+        
+        # Parse killzone times from config
+        def parse_time(time_str):
+            try:
+                hour, minute = map(int, time_str.split(':'))
+                return time(hour, minute)
+            except:
+                return time(8, 0)  # Default fallback
+        
+        # Get killzone settings from config
+        asia_london_start = parse_time(config.KILLZONE_ASIA_LONDON_START)
+        asia_london_end = parse_time(config.KILLZONE_ASIA_LONDON_END)
+        ny_start = parse_time(config.KILLZONE_NY_START)
+        ny_end = parse_time(config.KILLZONE_NY_END)
+        
+        # ✅ KILLZONE YANG LEBIH PANJANG - dari config
+        asia_london_kz = asia_london_start <= now <= asia_london_end
+        ny_kz = ny_start <= now <= ny_end
+        
+        return asia_london_kz or ny_kz
 
     def get_multiple_timeframes(self, symbol):
         """Analisis multiple timeframes untuk konfirmasi"""

@@ -3,13 +3,17 @@ import logging
 from datetime import datetime
 import os
 import time
+from core.config import config
 
 # Buat folder log jika belum ada
 os.makedirs("logs", exist_ok=True)
 
 # Setup logger
 logger = logging.getLogger("ICTBot")
-logger.setLevel(logging.INFO)
+
+# Set log level from config
+log_level = getattr(logging, config.LOG_LEVEL.upper(), logging.INFO)
+logger.setLevel(log_level)
 
 # Hindari duplikat handler saat re-import
 if not logger.handlers:
