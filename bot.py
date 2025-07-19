@@ -313,7 +313,8 @@ class ICTBot:
                 signal.strength >= 8 and
                 signal.bias >= 7 and
                 signal.regime >= 7 and
-                safe_get(self.filters, 'vol_range', default=[0,0])[0] <= signal.volatility <= safe_get(self.filters, 'vol_range', default=[0,0])[1] and
+                # ✅ FIXED: Use proper volatility range default from config
+                safe_get(self.filters, 'vol_range', default=[config.VOL_RANGE_MIN, config.VOL_RANGE_MAX])[0] <= signal.volatility <= safe_get(self.filters, 'vol_range', default=[config.VOL_RANGE_MIN, config.VOL_RANGE_MAX])[1] and
                 # ✅ FIXED: Use proper quality score default from config
                 signal.quality_score >= safe_get(self.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE) and  # Use config default instead of 0
                 signal.validate_levels()  # Enhanced validation
@@ -405,21 +406,21 @@ class ICTBot:
     def calculate_risk(self):
         """Calculate risk based on account conditions"""
         try:
-            # Default risk
-            risk = safe_get(self.risk_management, 'default_risk', default=0)
+            # ✅ FIXED: Use proper risk defaults from config
+            risk = safe_get(self.risk_management, 'default_risk', default=config.DEFAULT_RISK/100)
             
             # Check drawdown
             if self.trader.get_drawdown() > 5:
-                risk = safe_get(self.risk_management, 'reduced_risk', default=0)
+                risk = safe_get(self.risk_management, 'reduced_risk', default=config.REDUCED_RISK/100)
             
             # Check consecutive losses
             if self.trader.get_consecutive_losses() >= 2:
-                risk = safe_get(self.risk_management, 'minimum_risk', default=0)
+                risk = safe_get(self.risk_management, 'minimum_risk', default=config.MINIMUM_RISK/100)
                 
             return risk
         except Exception as e:
             logger.error(f"Risk calculation error: {e}")
-            return safe_get(self.risk_management, 'minimum_risk', default=0)
+            return safe_get(self.risk_management, 'minimum_risk', default=config.MINIMUM_RISK/100)
 
     def send_startup_message(self):
         """Send startup message to Telegram"""
@@ -436,7 +437,7 @@ class ICTBot:
                 f"Hari ini siap trading, jangan galak-galak ya~\n\n"
                 f"Pairs: {pairs}\n"
                 f"Target sinyal: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}/hari\n"
-                f"Risk: {safe_get(self.risk_management, 'default_risk', default=0)*100:.0f}% per trade\n"
+                f"Risk: {safe_get(self.risk_management, 'default_risk', default=config.DEFAULT_RISK/100)*100:.0f}% per trade\n"
                 f"Quality minimal: {safe_get(self.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE)}\n\n"
                 f"Status: Lagi mantau market, siap cari cuan! 🚦\n\n"
                 f"(Psst... Kalau aku error, jangan salahin aku, salahin market aja 😆)"
@@ -456,7 +457,7 @@ class ICTBot:
                 "performance": self.trader.get_performance()
             }
             
-            if safe_get(self.risk_management, 'max_trades', default=0) <= status['daily_trades']:
+            if safe_get(self.risk_management, 'max_trades', default=config.MAX_DAILY_TRADES) <= status['daily_trades']:
                 logger.info("Daily trade limit reached")
         except Exception as e:
             logger.error(f"Status update error: {e}")
@@ -488,16 +489,16 @@ class ICTBot:
         s = self
         settings = (
             f"⚙️ *BOT SETTINGS*\n"
-            f"Risk: {safe_get(s.risk_management, 'default_risk', default=0)*100:.2f}%\n"
+            f"Risk: {safe_get(s.risk_management, 'default_risk', default=config.DEFAULT_RISK/100)*100:.2f}%\n"
             f"Leverage: {s.trader.leverage}x\n"
-            f"Max Daily Trades: {safe_get(s.risk_management, 'max_trades', default=0)}\n"
-            f"Max Concurrent Trades: {safe_get(s.risk_management, 'max_concurrent', default=0)}\n"
+            f"Max Daily Trades: {safe_get(s.risk_management, 'max_trades', default=config.MAX_DAILY_TRADES)}\n"
+            f"Max Concurrent Trades: {safe_get(s.risk_management, 'max_concurrent', default=config.MAX_CONCURRENT_TRADES)}\n"
             f"Drawdown Limit: {config.MAX_DRAWDOWN}%\n"
             f"Min Quality Score: {safe_get(s.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE)}\n"
-            f"Min Signal Strength: {safe_get(s.filters, 'signal_strength', default=0)}\n"
-            f"Min Bias Strength: {safe_get(s.filters, 'bias_strength', default=0)}\n"
-            f"Min Regime Score: {safe_get(s.filters, 'regime_score', default=0)}\n"
-            f"Volatility Range: {safe_get(s.filters, 'vol_range', default=[0,0])[0]} - {safe_get(s.filters, 'vol_range', default=[0,0])[1]}\n"
+            f"Min Signal Strength: {safe_get(s.filters, 'signal_strength', default=config.MIN_SIGNAL_STRENGTH)}\n"
+            f"Min Bias Strength: {safe_get(s.filters, 'bias_strength', default=config.MIN_BIAS_STRENGTH)}\n"
+            f"Min Regime Score: {safe_get(s.filters, 'regime_score', default=config.MIN_REGIME_SCORE)}\n"
+            f"Volatility Range: {safe_get(s.filters, 'vol_range', default=[config.VOL_RANGE_MIN, config.VOL_RANGE_MAX])[0]} - {safe_get(s.filters, 'vol_range', default=[config.VOL_RANGE_MIN, config.VOL_RANGE_MAX])[1]}\n"
             f"Timeframe aktif: {config.DEFAULT_INTERVAL}\n"
             f"Session: London {config.LONDON_START}-{config.LONDON_END}, NY {config.NY_START}-{config.NY_END}, Asia {config.ASIAN_START}-{config.ASIAN_END}\n"
             f"Pairs: {', '.join(self.trading_pairs)}\n"
