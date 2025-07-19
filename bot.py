@@ -341,101 +341,14 @@ class ICTBot:
     # (Kosong, tidak ada pass)
 
 if __name__ == "__main__":
-    def telegram_message_handler(msg):
-        text = msg.get('text', '').strip().lower()
-        chat_id = msg.get('chat', {}).get('id')
-        # Only respond to the configured chat_id
-        if str(chat_id) != str(config.TELEGRAM_CHAT_ID):
-            telegram.send_message("⚠️ Unauthorized access.")
-            return
-        
-        if text == "/start":
-            telegram.send_message("👋 Hai! Aku Arif_Bot, siap membantu trading kamu. Ketik /help untuk daftar perintah.")
-            telegram.send_main_menu()
-            return
-        
-        if text == "/status":
-            # ✅ ENHANCED: Use new enhanced status
-            telegram.send_enhanced_status(ICTBot.instance)
-        elif text == "/balance":
-            trader = EnhancedICTTrader()
-            balance = trader.get_account_balance()
-            telegram.send_message(f"💰 Saldo USDT saat ini: {balance:.2f}")
-        elif text == "/drawdown":
-            trader = EnhancedICTTrader()
-            drawdown = trader.get_drawdown()
-            max_drawdown = trader.get_max_drawdown()
-            telegram.send_message(f"📉 Drawdown saat ini: {drawdown:.2f}%\n📊 Max Drawdown: {max_drawdown:.2f}%")
-        elif text == "/performance":
-            # ✅ NEW: Detailed performance report
-            telegram.send_performance_report(ICTBot.instance)
-        elif text == "/cleanup":
-            # ✅ NEW: Cleanup orphaned positions
-            telegram.send_cleanup_command(ICTBot.instance)
-        elif text == "/positions":
-            # ✅ NEW: Show active positions
-            active_positions = ICTBot.instance.trader.active_positions
-            if not active_positions:
-                telegram.send_message("📊 Tidak ada posisi aktif saat ini.")
-            else:
-                msg = "📊 *AKTIF POSITIONS:*\n\n"
-                for pos_id, pos in active_positions.items():
-                    pnl = ICTBot.instance.trader._calculate_position_pnl(pos)
-                    msg += f"🎯 {pos['symbol']} {pos['direction']}\n"
-                    msg += f"💰 Entry: ${pos['entry']:.2f}\n"
-                    msg += f"🛑 SL: ${pos['sl']:.2f}\n"
-                    msg += f"📊 Size: {pos['size']}\n"
-                    msg += f"📈 PnL: ${pnl:.2f}\n"
-                    msg += f"⏰ Opened: {pos['opened_at'].strftime('%H:%M')}\n\n"
-                telegram.send_message(msg)
-        elif text == "/help":
-            telegram.send_message("""
-📖 *Daftar Perintah Lengkap:*
-
-🔍 *STATUS & MONITORING:*
-/status - Status bot dengan metrics lengkap
-/performance - Laporan performa detail
-/balance - Cek saldo USDT
-/drawdown - Cek drawdown saat ini
-/positions - Lihat posisi aktif
-/uptime - Lama bot berjalan
-
-⚙️ *MANAGEMENT:*
-/settings - Lihat setting utama bot
-/cleanup - Bersihkan orphaned positions
-/pause - Pause trading
-/resume - Lanjutkan trading
-/shutdown - Matikan bot
-
-📊 *REPORTS:*
-/summary - Ringkasan performa harian
-/help - Lihat daftar command
-
-💡 *Tips:* Gunakan /status untuk monitoring real-time!
-            """)
-            telegram.send_main_menu()
-        elif text == "/summary":
-            telegram.send_message(ICTBot.instance.get_summary())
-        elif text == "/settings":
-            telegram.send_message(ICTBot.instance.get_settings())
-        elif text == "/uptime":
-            telegram.send_message(f"⏱ Uptime: {ICTBot.instance.get_uptime()}")
-        elif text == "/pause":
-            ICTBot.instance.paused = True
-            telegram.send_message("⏸️ Trading paused. Bot tidak akan entry baru sampai /resume.")
-        elif text == "/resume":
-            ICTBot.instance.paused = False
-            telegram.send_message("▶️ Trading resumed. Bot akan entry seperti biasa.")
-        elif text == "/shutdown":
-            telegram.send_message("🛑 Bot akan dimatikan...")
-            # ✅ ENHANCED: Proper shutdown
-            ICTBot.instance.trader.shutdown()
-            exit(0)
-        else:
-            telegram.send_message(f"⚠️ Perintah tidak dikenali: {text}\nKetik /help untuk daftar perintah yang tersedia.")
-
     ICTBot.instance = None
     bot = ICTBot()
-    telegram.start_polling(handler=telegram_message_handler)
+    
+    # Set bot instance reference for Telegram
+    telegram.set_bot_instance(bot)
+    
+    # Start Telegram polling (no need for separate handler)
+    telegram.start_polling()
+    
     ICTBot.instance = bot
     bot.start()

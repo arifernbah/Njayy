@@ -20,13 +20,19 @@ class TelegramBot:
         self.base_url = f"https://api.telegram.org/bot{self.token}"
         self._polling_active = False
         self._polling_thread = None
-        self.message_handler = None  # User can set this to a function
+        self.message_handler = None
+        self.bot_instance = None  # Reference to main bot instance
+        
         # Load last update id from file
         try:
             with open('telegram_offset.txt', 'r') as f:
                 self._last_update_id = int(f.read().strip())
         except:
             self._last_update_id = None
+    
+    def set_bot_instance(self, bot_instance):
+        """Set reference to main bot instance"""
+        self.bot_instance = bot_instance
     
     def test_connection(self):
         """Test Telegram bot connection"""
@@ -46,8 +52,8 @@ class TelegramBot:
             logger.error(f"Telegram connection error: {e}")
             return False
     
-    def send_message(self, message, parse_mode=None):
-        """Send message to Telegram with retry, no formatting (plain text)"""
+    def send_message(self, message, parse_mode="Markdown"):
+        """Send message to Telegram with retry"""
         for attempt in range(3):
             try:
                 if not config.ENABLE_TELEGRAM:
@@ -56,7 +62,8 @@ class TelegramBot:
                 url = f"{self.base_url}/sendMessage"
                 payload = {
                     'chat_id': self.chat_id,
-                    'text': message
+                    'text': message,
+                    'parse_mode': parse_mode
                 }
                 response = requests.post(url, json=payload, timeout=10)
                 if response.status_code == 200:
@@ -70,12 +77,13 @@ class TelegramBot:
             time.sleep(2)
         logger.error(f"Telegram send failed after 3 attempts: {message}")
         return False
-    
+
+    # ===== UNIFIED TRADING ALERTS =====
     def send_trade_alert(self, signal, bias, risk, position_size):
-        """Send enhanced trade alert with ICT quality information"""
+        """Unified trade alert with ICT quality information"""
         timestamp = datetime.utcnow().strftime("%H:%M UTC")
         
-        # ✅ ENHANCED: ICT Quality Information
+        # Quality indicators
         quality_emoji = {
             'PREMIUM': '💎',
             'STANDARD': '⭐',
@@ -92,7 +100,7 @@ class TelegramBot:
         quality_icon = quality_emoji.get(signal.quality_class, '📊')
         zone_icon = zone_emoji.get(signal.zone_position, '🟡')
         
-        # ✅ ENHANCED: ICT Metrics
+        # ICT summary
         ict_summary = signal.get_ict_summary() if hasattr(signal, 'get_ict_summary') else {}
         
         message = f"""
@@ -104,10 +112,6 @@ class TelegramBot:
 🕒 *Time*: {timestamp}
 📊 *Bias*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=0):.1f})
 🧠 *Signal Strength*: {signal.strength}
-🧱 *OB + BOS Valid*: ✅
-🕳 *FVG*: ✅
-💧 *Liquidity Sweep*: {'✅' if signal.has_sweep else '❌'}
-🔥 *Displacement Candle*: ✅
 
 🎯 *ENTRY*: {signal.entry}
 🛡 *SL*: {signal.sl}
@@ -127,364 +131,533 @@ class TelegramBot:
         
         return self.send_message(message)
 
-    def send_ict_quality_alert(self, signal, bias):
-        """Send ICT quality analysis alert"""
-        timestamp = datetime.utcnow().strftime("%H:%M UTC")
+    # ===== UNIFIED STATUS & MONITORING =====
+    def send_status(self, status_type="full"):
+        """Unified status command - handles all status requests"""
+        if not self.bot_instance:
+            return self.send_message("❌ Bot instance not available")
         
-        quality_emoji = {
-            'PREMIUM': '💎',
-            'STANDARD': '⭐',
-            'BASIC': '📊',
-            'LOW_QUALITY': '⚠️'
-        }
-        
-        quality_icon = quality_emoji.get(signal.quality_class, '📊')
-        
-        message = f"""
-{quality_icon} *ICT QUALITY ANALYSIS*
-
-📌 *PAIR*: {signal.pair}
-🕒 *Time*: {timestamp}
-📊 *Quality Score*: {signal.quality_score}/100
-🏷️ *Quality Class*: {signal.quality_class}
-🎯 *Priority*: {signal.priority}
-
-📈 *ICT METRICS*:
-• Zone Quality: {signal.ict_metrics.get('zone_quality', 0)}/25
-• Volume Quality: {signal.ict_metrics.get('volume_quality', 0)}/25
-• Signal Quality: {signal.ict_metrics.get('signal_quality', 0)}/25
-• Structure Quality: {signal.ict_metrics.get('structure_quality', 0)}/25
-
-📍 *ZONE ANALYSIS*:
-• Position: {signal.zone_position}
-• VWAP Distance: {signal.vwap_distance:.2%}
-• Institutional Volume: {signal.institutional_volume_strength:.2f}
-
-📊 *BIAS*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=0):.1f})
-        """
-        
-        return self.send_message(message)
-
-    def send_premium_signal_alert(self, signal, bias):
-        """Send special alert for premium signals"""
-        timestamp = datetime.utcnow().strftime("%H:%M UTC")
-        
-        message = f"""
-💎 *PREMIUM SIGNAL DETECTED* 💎
-
-📌 *PAIR*: {signal.pair}
-🕒 *Time*: {timestamp}
-📊 *Quality Score*: {signal.quality_score}/100
-🏷️ *Quality Class*: {signal.quality_class}
-🎯 *Priority*: {signal.priority}
-
-📍 *ZONE*: {signal.zone_position}
-📈 *VWAP Distance*: {signal.vwap_distance:.2%}
-💪 *Institutional Volume*: {signal.institutional_volume_strength:.2f}
-
-🎯 *ENTRY*: {signal.entry}
-🛡 *SL*: {signal.sl}
-🎯 *TP1*: {signal.tp1}
-🎯 *TP2*: {signal.tp2}
-
-📊 *BIAS*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=0):.1f})
-🧠 *Signal Strength*: {signal.strength}
-
-🚨 *HIGH CONFIDENCE SIGNAL*
-        """
-        
-        return self.send_message(message)
-    
-    def send_trade_update(self, trade_id, status, pnl=None):
-        """Send trade update notification"""
-        timestamp = datetime.utcnow().strftime("%H:%M UTC")
-        
-        status_emoji = {
-            'closed_profit': '✅',
-            'closed_loss': '❌',
-            'partial_profit': '🔄',
-            'modified': '⚙️'
-        }
-        
-        message = f"""
-{status_emoji.get(status, '📊')} *TRADE UPDATE*
-
-🕒 *Time*: {timestamp}
-🔢 *Trade ID*: {trade_id}
-📊 *Status*: {status.replace('_', ' ').title()}
-"""
-        
-        if pnl is not None:
-            message += f"💰 *P&L*: {pnl:.2f}$\n"
-        
-        return self.send_message(message)
-    
-    def send_daily_summary(self, summary):
-        """Send daily performance summary"""
-        message = f"""
-📊 *DAILY SUMMARY*
-
-📅 *Date*: {datetime.utcnow().strftime("%Y-%m-%d")}
-🎯 *Total Trades*: {summary.get('total_trades', 0)}
-✅ *Winners*: {summary.get('winners', 0)}
-❌ *Losers*: {summary.get('losers', 0)}
-📈 *Win Rate*: {summary.get('win_rate', 0):.1f}%
-💰 *Total P&L*: {summary.get('total_pnl', 0):.2f}$
-📊 *Best Trade*: {summary.get('best_trade', 0):.2f}$
-📉 *Worst Trade*: {summary.get('worst_trade', 0):.2f}$
-
-🤖 *Bot Status*: Running
-        """
-        
-        return self.send_message(message)
-    
-    def send_error_alert(self, error_msg, error_type="General"):
-        """Send error alert"""
-        timestamp = datetime.utcnow().strftime("%H:%M UTC")
-        
-        message = f"""
-⚠️ *ERROR ALERT*
-
-🕒 *Time*: {timestamp}
-🔴 *Type*: {error_type}
-📝 *Message*: {error_msg}
-
-🤖 *Bot Status*: Checking...
-        """
-        
-        return self.send_message(message)
-    
-    def send_startup_message(self, bot_version, author):
-        """Send bot startup message"""
-        message = f"""
-🚀 *ICT Bot {bot_version} Started*
-
-👨‍💻 *Author*: {author}
-🕒 *Started*: {datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')} UTC
-📊 *Settings*:
-- Max Daily Trades: {config.MAX_DAILY_TRADES}
-- Default Risk: {config.DEFAULT_RISK}%
-- Min Signal Strength: {config.MIN_SIGNAL_STRENGTH}
-- Loop Interval: {config.LOOP_INTERVAL}s
-
-🤖 *Status*: Bot is running...
-        """
-        
-        return self.send_message(message)
-    
-    def send_session_info(self, session_name, active=True):
-        """Send trading session info"""
-        status = "🟢 ACTIVE" if active else "🔴 INACTIVE"
-        
-        message = f"""
-⏰ *TRADING SESSION*
-
-📍 *Session*: {session_name}
-📊 *Status*: {status}
-🕒 *Time*: {datetime.utcnow().strftime("%H:%M UTC")}
-
-🤖 *Bot*: Monitoring...
-        """
-        
-        return self.send_message(message)
-
-    def send_main_menu(self):
-        """Send custom keyboard with main menu commands"""
-        keyboard = {
-            "keyboard": [
-                [{"text": "/status"}, {"text": "/balance"}, {"text": "/drawdown"}],
-                [{"text": "/summary"}, {"text": "/settings"}, {"text": "/uptime"}],
-                [{"text": "/pause"}, {"text": "/resume"}, {"text": "/help"}],
-                [{"text": "/shutdown"}]
-            ],
-            "resize_keyboard": True,
-            "one_time_keyboard": False
-        }
-        payload = {
-            'chat_id': self.chat_id,
-            'text': "Pilih menu:",
-            'reply_markup': keyboard
-        }
-        url = f"{self.base_url}/sendMessage"
         try:
-            requests.post(url, json=payload, timeout=10)
-        except Exception as e:
-            logger.error(f"Failed to send main menu: {e}")
-
-    def poll_messages(self, timeout=30):
-        """Poll for new messages using getUpdates"""
-        url = f"{self.base_url}/getUpdates"
-        params = {'timeout': timeout}
-        if self._last_update_id:
-            params['offset'] = self._last_update_id + 1
-        try:
-            response = requests.get(url, params=params, timeout=timeout+5)
-            if response.status_code == 200:
-                updates = safe_get(response.json(), 'result', default=[])
-                return updates
+            if status_type == "full" or status_type == "status":
+                return self._send_full_status()
+            elif status_type == "performance":
+                return self._send_performance_report()
+            elif status_type == "balance":
+                return self._send_balance_info()
+            elif status_type == "drawdown":
+                return self._send_drawdown_info()
+            elif status_type == "positions":
+                return self._send_positions_info()
+            elif status_type == "settings":
+                return self._send_settings_info()
+            elif status_type == "summary":
+                return self._send_summary_info()
             else:
-                logger.error(f"Polling failed: {response.text}")
-                return []
+                return self.send_message("❌ Invalid status type")
         except Exception as e:
-            logger.error(f"Polling error: {e}")
-            return []
+            logger.error(f"Error sending status: {e}")
+            return self.send_message("❌ Error getting status information")
 
-    def start_polling(self, handler=None, interval=2):
-        """Start background polling for incoming messages"""
-        if self._polling_active:
-            logger.info("Polling already active.")
-            return
-        self._polling_active = True
-        if handler:
-            self.message_handler = handler
-        self._polling_thread = threading.Thread(target=self._polling_loop, args=(interval,), daemon=True)
-        self._polling_thread.start()
-        logger.info("Started Telegram polling thread.")
+    def _send_full_status(self):
+        """Send comprehensive bot status"""
+        if not self.bot_instance:
+            return False
+            
+        try:
+            trader = self.bot_instance.trader
+            perf = trader.get_enhanced_performance()
+            
+            message = f"""
+🤖 *ARIF BOT STATUS*
 
-    def stop_polling(self):
-        self._polling_active = False
-        if self._polling_thread:
-            self._polling_thread.join(timeout=2)
-            logger.info("Stopped Telegram polling thread.")
+📊 *PERFORMANCE*:
+• Total Trades: {perf.get('total_trades', 0)}
+• Win Rate: {perf.get('win_rate', 0):.1f}%
+• Daily PnL: ${perf.get('daily_pnl', 0):.2f}
+• Current Drawdown: {trader.get_drawdown():.2f}%
 
-    def _polling_loop(self, interval):
-        while self._polling_active:
-            updates = self.poll_messages()
-            for update in updates:
-                self._last_update_id = safe_get(update, 'update_id', default=None)
-                # Simpan offset ke file setiap kali update
-                if self._last_update_id is not None:
-                    try:
-                        with open('telegram_offset.txt', 'w') as f:
-                            f.write(str(self._last_update_id))
-                    except Exception as e:
-                        logger.error(f"Failed to save telegram offset: {e}")
-                if 'message' in update:
-                    msg = safe_get(update, 'message', default=None)
-                    if self.message_handler:
-                        try:
-                            self.message_handler(msg)
-                        except Exception as e:
-                            logger.error(f"Message handler error: {e}")
-                    else:
-                        logger.info(f"Received message: {msg}")
-            time.sleep(interval)
+💰 *ACCOUNT*:
+• Balance: ${trader.get_account_balance():.2f}
+• Active Positions: {perf.get('active_positions', 0)}
+• Daily Trades: {trader.get_daily_trades()}
 
-    def set_message_handler(self, handler):
-        """Set a custom handler for incoming messages"""
-        self.message_handler = handler
+⏱ *SYSTEM*:
+• Uptime: {self.bot_instance.get_uptime()}
+• Status: {'🟢 Running' if not self.bot_instance.paused else '⏸️ Paused'}
+• Market Volatility: {perf.get('market_volatility', 0):.2f}%
 
-    def send_enhanced_status(self, bot_instance):
-        """Send enhanced status with performance metrics"""
+🎯 *TODAY'S TARGET*:
+• Signals: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}
+• Risk per Trade: {safe_get(self.bot_instance.risk_management, 'default_risk', default=0)*100:.1f}%
+            """
+            
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error in full status: {e}")
+            return False
+
+    def _send_performance_report(self):
+        """Send detailed performance report"""
+        if not self.bot_instance:
+            return False
+            
+        try:
+            trader = self.bot_instance.trader
+            perf = trader.get_enhanced_performance()
+            
+            message = f"""
+📊 *DETAILED PERFORMANCE*
+
+📈 *TRADING STATS*:
+• Total Trades: {perf.get('total_trades', 0)}
+• Wins: {perf.get('wins', 0)}
+• Losses: {perf.get('losses', 0)}
+• Win Rate: {perf.get('win_rate', 0):.1f}%
+• Profit Factor: {perf.get('profit_factor', 0):.2f}
+• Sharpe Ratio: {perf.get('sharpe_ratio', 0):.2f}
+
+💰 *FINANCIAL*:
+• Total PnL: ${perf.get('total_pnl', 0):.2f}
+• Daily PnL: ${perf.get('daily_pnl', 0):.2f}
+• Max Balance: ${perf.get('max_balance', 0):.2f}
+• Current Balance: ${trader.get_account_balance():.2f}
+
+📉 *RISK METRICS*:
+• Current Drawdown: {trader.get_drawdown():.2f}%
+• Max Drawdown: {trader.get_max_drawdown():.2f}%
+• Consecutive Losses: {trader.get_consecutive_losses()}
+• Market Volatility: {perf.get('market_volatility', 0):.2f}%
+
+🔄 *ACTIVE*:
+• Open Positions: {perf.get('active_positions', 0)}
+• Daily Trades: {trader.get_daily_trades()}
+            """
+            
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error in performance report: {e}")
+            return False
+
+    def _send_balance_info(self):
+        """Send balance information"""
+        if not self.bot_instance:
+            return False
+            
+        try:
+            balance = self.bot_instance.trader.get_account_balance()
+            message = f"💰 *ACCOUNT BALANCE*\n\nCurrent USDT: ${balance:.2f}"
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error getting balance: {e}")
+            return False
+
+    def _send_drawdown_info(self):
+        """Send drawdown information"""
+        if not self.bot_instance:
+            return False
+            
+        try:
+            trader = self.bot_instance.trader
+            current_dd = trader.get_drawdown()
+            max_dd = trader.get_max_drawdown()
+            
+            message = f"""
+📉 *DRAWDOWN ANALYSIS*
+
+Current Drawdown: {current_dd:.2f}%
+Max Drawdown: {max_dd:.2f}%
+Limit: {config.MAX_DRAWDOWN}%
+
+Status: {'🟢 Safe' if current_dd < config.MAX_DRAWDOWN else '🔴 Warning'}
+            """
+            
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error getting drawdown: {e}")
+            return False
+
+    def _send_positions_info(self):
+        """Send active positions information"""
+        if not self.bot_instance:
+            return False
+            
+        try:
+            active_positions = self.bot_instance.trader.active_positions
+            
+            if not active_positions:
+                return self.send_message("📊 *ACTIVE POSITIONS*\n\nNo active positions")
+            
+            message = "📊 *ACTIVE POSITIONS*\n\n"
+            
+            for pos_id, pos in active_positions.items():
+                try:
+                    pnl = self.bot_instance.trader._calculate_position_pnl(pos)
+                    opened_time = pos.get('opened_at', datetime.utcnow()).strftime('%H:%M')
+                    
+                    message += f"""
+🎯 *{pos['symbol']} {pos['direction']}*
+💰 Entry: ${pos['entry']:.2f}
+🛑 SL: ${pos['sl']:.2f}
+📊 Size: {pos['size']}
+📈 PnL: ${pnl:.2f}
+⏰ Opened: {opened_time}
+                    """
+                except Exception as e:
+                    logger.error(f"Error processing position {pos_id}: {e}")
+                    continue
+            
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error getting positions: {e}")
+            return False
+
+    def _send_settings_info(self):
+        """Send bot settings information"""
+        if not self.bot_instance:
+            return False
+            
+        try:
+            settings = self.bot_instance.get_settings()
+            return self.send_message(settings)
+        except Exception as e:
+            logger.error(f"Error getting settings: {e}")
+            return False
+
+    def _send_summary_info(self):
+        """Send summary information"""
+        if not self.bot_instance:
+            return False
+            
+        try:
+            summary = self.bot_instance.get_summary()
+            return self.send_message(summary)
+        except Exception as e:
+            logger.error(f"Error getting summary: {e}")
+            return False
+
+    # ===== UNIFIED MANAGEMENT COMMANDS =====
+    def send_management_command(self, command_type):
+        """Unified management command handler"""
+        if not self.bot_instance:
+            return self.send_message("❌ Bot instance not available")
+        
+        try:
+            if command_type == "cleanup":
+                return self._handle_cleanup()
+            elif command_type == "pause":
+                return self._handle_pause()
+            elif command_type == "resume":
+                return self._handle_resume()
+            elif command_type == "shutdown":
+                return self._handle_shutdown()
+            else:
+                return self.send_message("❌ Invalid management command")
+        except Exception as e:
+            logger.error(f"Error in management command: {e}")
+            return self.send_message("❌ Error executing management command")
+
+    def _handle_cleanup(self):
+        """Handle cleanup command"""
+        try:
+            cleaned = self.bot_instance.trader.cleanup_orphaned_positions()
+            message = f"🧹 *CLEANUP COMPLETED*\n\nOrphaned positions cleaned: {cleaned}"
+            return self.send_message(message)
+        except Exception as e:
+            logger.error(f"Error in cleanup: {e}")
+            return self.send_message("❌ Error during cleanup")
+
+    def _handle_pause(self):
+        """Handle pause command"""
+        try:
+            self.bot_instance.paused = True
+            return self.send_message("⏸️ *TRADING PAUSED*\n\nBot will not enter new positions until resumed.")
+        except Exception as e:
+            logger.error(f"Error pausing: {e}")
+            return self.send_message("❌ Error pausing bot")
+
+    def _handle_resume(self):
+        """Handle resume command"""
+        try:
+            self.bot_instance.paused = False
+            return self.send_message("▶️ *TRADING RESUMED*\n\nBot is now active and will enter positions normally.")
+        except Exception as e:
+            logger.error(f"Error resuming: {e}")
+            return self.send_message("❌ Error resuming bot")
+
+    def _handle_shutdown(self):
+        """Handle shutdown command"""
+        try:
+            self.send_message("🛑 *SHUTDOWN INITIATED*\n\nBot will shut down safely...")
+            self.bot_instance.trader.shutdown()
+            return True
+        except Exception as e:
+            logger.error(f"Error shutting down: {e}")
+            return self.send_message("❌ Error shutting down bot")
+
+    # ===== HELPER FUNCTIONS =====
+    def send_startup_message(self, bot_version, author):
+        """Send startup message"""
         try:
             from datetime import timedelta
             utc_now = datetime.utcnow()
             wib_now = utc_now + timedelta(hours=7)
             
-            # Get enhanced performance
-            performance = bot_instance.trader.get_enhanced_performance()
-            
-            # Calculate uptime
-            uptime = bot_instance.get_uptime()
-            
             message = f"""
-🤖 *BOT STATUS REPORT*
+👋 *ARIF BOT STARTED*
 
-📅 *Date*: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB
-⏱️ *Uptime*: {uptime}
-📊 *Active Positions*: {performance.get('active_positions', 0)}
-🔢 *Daily Trades*: {performance.get('daily_trades', 0)}/{performance.get('max_daily_trades', 0)}
+🕒 Time: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB
+🤖 Version: {bot_version}
+👨‍💻 Author: {author}
 
-📈 *PERFORMANCE METRICS*:
-• Total Trades: {performance.get('total_trades', 0)}
-• Win Rate: {performance.get('win_rate', 0):.1f}%
-• Profit Factor: {performance.get('profit_factor', 0):.2f}
-• Sharpe Ratio: {performance.get('sharpe_ratio', 0):.2f}
-• Current Drawdown: {performance.get('current_drawdown', 0):.2f}%
-• Max Drawdown: {performance.get('max_drawdown', 0):.2f}%
+Status: 🟢 Ready for trading!
+            """
+            
+            self.send_message(message)
+            self.send_main_menu()
+        except Exception as e:
+            logger.error(f"Error sending startup message: {e}")
 
-💰 *PNL SUMMARY*:
-• Total PnL: ${performance.get('total_pnl', 0):.2f}
-• Daily PnL: ${performance.get('daily_pnl', 0):.2f}
-• Avg Win: ${performance.get('avg_win', 0):.2f}
-• Avg Loss: ${performance.get('avg_loss', 0):.2f}
+    def send_error_alert(self, error_msg, error_type="General"):
+        """Send error alert"""
+        try:
+            timestamp = datetime.utcnow().strftime("%H:%M UTC")
+            message = f"""
+🚨 *ERROR ALERT*
 
-🎯 *TRADING PAIRS*: {', '.join(bot_instance.trading_pairs[:5])}{'...' if len(bot_instance.trading_pairs) > 5 else ''}
+Type: {error_type}
+Time: {timestamp}
+Error: {error_msg}
+
+Status: Bot continues running
             """
             
             return self.send_message(message)
-            
         except Exception as e:
-            logger.error(f"Error sending enhanced status: {e}")
+            logger.error(f"Error sending error alert: {e}")
+
+    def send_main_menu(self):
+        """Send main menu with inline keyboard"""
+        try:
+            message = """
+🤖 *ARIF BOT - MAIN MENU*
+
+Choose an option:
+            """
+            
+            # Create inline keyboard
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "📊 Status", "callback_data": "status"},
+                        {"text": "💰 Balance", "callback_data": "balance"}
+                    ],
+                    [
+                        {"text": "📈 Performance", "callback_data": "performance"},
+                        {"text": "📉 Drawdown", "callback_data": "drawdown"}
+                    ],
+                    [
+                        {"text": "📋 Positions", "callback_data": "positions"},
+                        {"text": "⚙️ Settings", "callback_data": "settings"}
+                    ],
+                    [
+                        {"text": "🧹 Cleanup", "callback_data": "cleanup"},
+                        {"text": "⏸️ Pause", "callback_data": "pause"}
+                    ],
+                    [
+                        {"text": "▶️ Resume", "callback_data": "resume"},
+                        {"text": "🛑 Shutdown", "callback_data": "shutdown"}
+                    ]
+                ]
+            }
+            
+            url = f"{self.base_url}/sendMessage"
+            payload = {
+                'chat_id': self.chat_id,
+                'text': message,
+                'parse_mode': 'Markdown',
+                'reply_markup': json.dumps(keyboard)
+            }
+            
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code == 200:
+                logger.info("Main menu sent successfully")
+                return True
+            else:
+                logger.error(f"Failed to send main menu: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error sending main menu: {e}")
             return False
 
-    def send_cleanup_command(self, bot_instance):
-        """Send cleanup command result"""
+    # ===== POLLING & MESSAGE HANDLING =====
+    def poll_messages(self, timeout=30):
+        """Poll for new messages"""
         try:
-            # Perform cleanup
-            bot_instance.trader.cleanup_orphaned_positions()
+            url = f"{self.base_url}/getUpdates"
+            params = {
+                'timeout': timeout,
+                'offset': self._last_update_id + 1 if self._last_update_id else None
+            }
             
-            # Get updated status
-            active_positions = len(bot_instance.trader.active_positions)
-            
-            message = f"""
-🧹 *CLEANUP COMPLETED*
+            response = requests.get(url, params=params, timeout=timeout + 5)
+            if response.status_code == 200:
+                updates = response.json().get('result', [])
+                for update in updates:
+                    self._last_update_id = update['update_id']
+                    if 'message' in update:
+                        self._handle_message(update['message'])
+                    elif 'callback_query' in update:
+                        self._handle_callback_query(update['callback_query'])
+                
+                # Save last update id
+                with open('telegram_offset.txt', 'w') as f:
+                    f.write(str(self._last_update_id))
+                    
+        except Exception as e:
+            logger.error(f"Error polling messages: {e}")
 
-✅ Orphaned positions cleaned up
-📊 Active positions: {active_positions}
-🕒 Time: {datetime.utcnow().strftime('%H:%M UTC')}
-
-Bot is now optimized and ready for trading!
-            """
+    def _handle_message(self, message):
+        """Handle incoming message"""
+        try:
+            text = message.get('text', '').strip()
+            chat_id = message.get('chat', {}).get('id')
             
-            return self.send_message(message)
+            # Check authorization
+            if str(chat_id) != str(config.TELEGRAM_CHAT_ID):
+                self.send_message("⚠️ Unauthorized access.")
+                return
+            
+            # Process command
+            self._process_command(text.lower())
             
         except Exception as e:
-            logger.error(f"Error in cleanup command: {e}")
-            return self.send_message(f"❌ Cleanup failed: {e}")
+            logger.error(f"Error handling message: {e}")
 
-    def send_performance_report(self, bot_instance):
-        """Send detailed performance report"""
+    def _handle_callback_query(self, callback_query):
+        """Handle callback query from inline keyboard"""
         try:
-            performance = bot_instance.trader.get_enhanced_performance()
+            data = callback_query.get('data', '')
+            chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
             
-            # Calculate win/loss streak
-            consecutive_losses = performance.get('consecutive_losses', 0)
-            streak_emoji = "🔴" if consecutive_losses > 0 else "🟢"
+            # Check authorization
+            if str(chat_id) != str(config.TELEGRAM_CHAT_ID):
+                self.send_message("⚠️ Unauthorized access.")
+                return
             
-            message = f"""
-📊 *DETAILED PERFORMANCE REPORT*
-
-🎯 *TRADE STATISTICS*:
-• Total Trades: {performance.get('total_trades', 0)}
-• Wins: {performance.get('wins', 0)}
-• Losses: {performance.get('losses', 0)}
-• Win Rate: {performance.get('win_rate', 0):.1f}%
-{streak_emoji} Consecutive Losses: {consecutive_losses}
-
-💰 *FINANCIAL METRICS*:
-• Total PnL: ${performance.get('total_pnl', 0):.2f}
-• Profit Factor: {performance.get('profit_factor', 0):.2f}
-• Sharpe Ratio: {performance.get('sharpe_ratio', 0):.2f}
-• Avg Win: ${performance.get('avg_win', 0):.2f}
-• Avg Loss: ${performance.get('avg_loss', 0):.2f}
-
-📉 *RISK METRICS*:
-• Current Drawdown: {performance.get('current_drawdown', 0):.2f}%
-• Max Drawdown: {performance.get('max_drawdown', 0):.2f}%
-• Max Balance: ${performance.get('max_balance', 0):.2f}
-• Min Balance: ${performance.get('min_balance', 0):.2f}
-
-📈 *CURRENT STATUS*:
-• Active Positions: {performance.get('active_positions', 0)}
-• Daily Trades: {performance.get('daily_trades', 0)}/{performance.get('max_daily_trades', 0)}
-            """
+            # Process callback
+            self._process_command(data)
             
-            return self.send_message(message)
+            # Answer callback query
+            url = f"{self.base_url}/answerCallbackQuery"
+            payload = {'callback_query_id': callback_query['id']}
+            requests.post(url, json=payload)
             
         except Exception as e:
-            logger.error(f"Error sending performance report: {e}")
-            return False
+            logger.error(f"Error handling callback query: {e}")
 
-# Create global telegram instance
+    def _process_command(self, command):
+        """Process unified command system"""
+        try:
+            # Status commands
+            if command in ['/status', 'status']:
+                self.send_status("full")
+            elif command in ['/performance', 'performance']:
+                self.send_status("performance")
+            elif command in ['/balance', 'balance']:
+                self.send_status("balance")
+            elif command in ['/drawdown', 'drawdown']:
+                self.send_status("drawdown")
+            elif command in ['/positions', 'positions']:
+                self.send_status("positions")
+            elif command in ['/settings', 'settings']:
+                self.send_status("settings")
+            elif command in ['/summary', 'summary']:
+                self.send_status("summary")
+            
+            # Management commands
+            elif command in ['/cleanup', 'cleanup']:
+                self.send_management_command("cleanup")
+            elif command in ['/pause', 'pause']:
+                self.send_management_command("pause")
+            elif command in ['/resume', 'resume']:
+                self.send_management_command("resume")
+            elif command in ['/shutdown', 'shutdown']:
+                self.send_management_command("shutdown")
+            
+            # Help commands
+            elif command in ['/start', '/help', 'help']:
+                self._send_help_message()
+            elif command in ['/uptime', 'uptime']:
+                if self.bot_instance:
+                    self.send_message(f"⏱ Uptime: {self.bot_instance.get_uptime()}")
+                else:
+                    self.send_message("❌ Bot instance not available")
+            
+            # Unknown command
+            else:
+                self.send_message(f"⚠️ Unknown command: {command}\nUse /help for available commands.")
+                
+        except Exception as e:
+            logger.error(f"Error processing command: {e}")
+            self.send_message("❌ Error processing command")
+
+    def _send_help_message(self):
+        """Send help message"""
+        message = """
+📖 *ARIF BOT COMMANDS*
+
+🔍 *STATUS & MONITORING:*
+/status - Full bot status
+/performance - Detailed performance report
+/balance - Account balance
+/drawdown - Drawdown analysis
+/positions - Active positions
+/settings - Bot settings
+/summary - Performance summary
+
+⚙️ *MANAGEMENT:*
+/cleanup - Clean orphaned positions
+/pause - Pause trading
+/resume - Resume trading
+/shutdown - Shutdown bot
+
+📊 *INFO:*
+/uptime - Bot uptime
+/help - This help message
+
+💡 *Tips:* Use the inline menu for quick access!
+        """
+        
+        self.send_message(message)
+        self.send_main_menu()
+
+    def start_polling(self, handler=None, interval=2):
+        """Start polling for messages"""
+        if self._polling_active:
+            return
+        
+        self._polling_active = True
+        self._polling_thread = threading.Thread(target=self._polling_loop, args=(interval,))
+        self._polling_thread.daemon = True
+        self._polling_thread.start()
+        logger.info("Telegram polling started")
+
+    def stop_polling(self):
+        """Stop polling for messages"""
+        self._polling_active = False
+        if self._polling_thread:
+            self._polling_thread.join()
+        logger.info("Telegram polling stopped")
+
+    def _polling_loop(self, interval):
+        """Polling loop"""
+        while self._polling_active:
+            try:
+                self.poll_messages(timeout=interval)
+            except Exception as e:
+                logger.error(f"Error in polling loop: {e}")
+                time.sleep(interval)
+
+# Global instance
 telegram = TelegramBot()
