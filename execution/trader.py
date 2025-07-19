@@ -170,7 +170,14 @@ class EnhancedICTTrader:
                 state = json.load(f)
             self.stuck_alert_sent = set(state.get("stuck_alert_sent", []))
             from datetime import datetime
-            self.last_entry_time = {k: datetime.fromisoformat(v) for k, v in state.get("last_entry_time", {}).items()}
+            self.last_entry_time = {}
+            for k, v in state.get("last_entry_time", {}).items():
+                if v is not None:
+                    try:
+                        self.last_entry_time[k] = datetime.fromisoformat(v)
+                    except (ValueError, TypeError):
+                        logger.warning(f"Invalid datetime format for {k}: {v}")
+                        continue
             self.daily_trades = state.get("daily_trades", 0)
         except Exception as e:
             logger.error(f"Failed to load state: {e}")
@@ -984,12 +991,13 @@ class EnhancedICTTrader:
         """Check for positions that haven't been updated recently"""
         cutoff_time = datetime.utcnow() - timedelta(minutes=5)
         for pos_id, position in self.active_positions.items():
-            if safe_get(position, 'last_price_check', default=None) < cutoff_time:
+            last_price_check = safe_get(position, 'last_price_check', default=None)
+            if last_price_check is not None and last_price_check < cutoff_time:
                 logger.warning(f"Position {pos_id} hasn't been updated recently")
                 telegram.send_message(
                     f"⚠️ *POSITION ALERT*\n"
                     f"Position {pos_id} may be stuck\n"
-                    f"Last update: {safe_get(position, 'last_price_check', default='N/A')}"
+                    f"Last update: {last_price_check}"
                 )
 
     def get_current_price_enhanced(self, symbol):

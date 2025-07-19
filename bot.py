@@ -185,7 +185,7 @@ class ICTBot:
             last_entry = getattr(self, 'last_entry_time', {})
             pair = getattr(signal, 'pair', None) or getattr(signal, 'symbol', None)
             if pair:
-                if pair in last_entry:
+                if pair in last_entry and last_entry[pair] is not None:
                     if (utc_now - last_entry[pair]).total_seconds() < 20*60:
                         return False
             # ✅ ENHANCED: ICT Quality-based filtering
