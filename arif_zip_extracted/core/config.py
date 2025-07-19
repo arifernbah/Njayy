@@ -24,10 +24,10 @@ class Config:
         # ✅ Trading Pairs - default fallback
         self.TRADING_PAIRS = os.getenv('TRADING_PAIRS', 'BTCUSDT,ETHUSDT,ADAUSDT,BNBUSDT,SOLUSDT,XRPUSDT').split(',')
         
-        # ✅ Top Volume Configuration (hardcoded, no .env needed)
-        self.USE_TOP_VOLUME_PAIRS = True  # Set to True to use top volume pairs
-        self.TOP_VOLUME_COUNT = 10        # Number of top volume pairs to use
-        self.VOLUME_TIMEFRAME = '24h'     # Volume timeframe (24h, 1h, etc.)
+        # ✅ Top Volume Configuration (configurable via .env)
+        self.USE_TOP_VOLUME_PAIRS = os.getenv('USE_TOP_VOLUME_PAIRS', 'True').lower() == 'true'
+        self.TOP_VOLUME_COUNT = int(os.getenv('TOP_VOLUME_COUNT', 10))
+        self.VOLUME_TIMEFRAME = os.getenv('VOLUME_TIMEFRAME', '24h')
         
         if self.USE_TOP_VOLUME_PAIRS:
             try:
