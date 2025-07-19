@@ -569,6 +569,22 @@ class EnhancedICTTrader:
     def calculate_adaptive_position_size(self, signal, base_risk_percent=2):
         """Calculate position size with volatility adjustment and small balance handling"""
         try:
+            # ✅ CRITICAL FIX: Convert all price fields to float to prevent NumPy errors
+            try:
+                entry_price = float(signal.entry)
+                sl_price = float(signal.sl)
+                tp1_price = float(signal.tp1)
+                tp2_price = float(signal.tp2)
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.error(f"❌ Signal price conversion error: {e}")
+                logger.error(f"Signal data: entry={getattr(signal, 'entry', 'N/A')}, sl={getattr(signal, 'sl', 'N/A')}, tp1={getattr(signal, 'tp1', 'N/A')}, tp2={getattr(signal, 'tp2', 'N/A')}")
+                return 0
+            
+            # Validate prices are positive
+            if entry_price <= 0 or sl_price <= 0 or tp1_price <= 0 or tp2_price <= 0:
+                logger.error(f"❌ Invalid prices detected: entry={entry_price}, sl={sl_price}, tp1={tp1_price}, tp2={tp2_price}")
+                return 0
+            
             # Base calculation
             balance = self.get_account_balance()
             
@@ -592,7 +608,7 @@ class EnhancedICTTrader:
                 adjusted_risk *= loss_factor
             
             risk_amount = balance * (adjusted_risk / 100)
-            risk_per_unit = abs(signal.entry - signal.sl)
+            risk_per_unit = abs(entry_price - sl_price)  # ✅ Use converted float values
             
             if risk_per_unit <= 0:
                 logger.error("Invalid risk calculation - SL too close to entry")
@@ -904,6 +920,22 @@ class EnhancedICTTrader:
     def execute_entry_enhanced(self, signal):
         """Enhanced entry execution with comprehensive checks and auto leverage"""
         try:
+            # ✅ CRITICAL FIX: Convert all price fields to float to prevent NumPy errors
+            try:
+                entry_price = float(signal.entry)
+                sl_price = float(signal.sl)
+                tp1_price = float(signal.tp1)
+                tp2_price = float(signal.tp2)
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.error(f"❌ Signal price conversion error in entry: {e}")
+                logger.error(f"Signal data: entry={getattr(signal, 'entry', 'N/A')}, sl={getattr(signal, 'sl', 'N/A')}, tp1={getattr(signal, 'tp1', 'N/A')}, tp2={getattr(signal, 'tp2', 'N/A')}")
+                return False
+            
+            # Validate prices are positive
+            if entry_price <= 0 or sl_price <= 0 or tp1_price <= 0 or tp2_price <= 0:
+                logger.error(f"❌ Invalid prices detected in entry: entry={entry_price}, sl={sl_price}, tp1={tp1_price}, tp2={tp2_price}")
+                return False
+            
             # Limitasi jumlah entry harian
             if self.daily_trades >= self.max_daily_trades:
                 logger.warning(f"[ENTRY LIMIT] Entry harian sudah mencapai {self.max_daily_trades}, skip entry baru.")
@@ -928,7 +960,7 @@ class EnhancedICTTrader:
                 logger.error("Invalid position size calculated")
                 return False
             # Check margin
-            if not self.check_margin_sufficient(position_size, signal.entry):
+            if not self.check_margin_sufficient(position_size, entry_price):  # ✅ Use converted entry_price
                 return False
             side = 'BUY' if signal.direction == 'BUY' else 'SELL'
             opposite_side = 'SELL' if side == 'BUY' else 'BUY'
@@ -939,11 +971,11 @@ class EnhancedICTTrader:
                 telegram.send_message(f"❌ ENTRY FAILED! Order market tidak masuk ke Binance untuk {self.symbol}.")
                 return False
             # Ambil harga entry/orderId real dari respons Binance
-            entry_price_real = safe_get(entry_order, 'avgFillPrice', default=safe_get(entry_order, 'price', default=signal.entry))
+            entry_price_real = safe_get(entry_order, 'avgFillPrice', default=safe_get(entry_order, 'price', default=entry_price))  # ✅ Use converted entry_price
             order_id = safe_get(entry_order, 'orderId', default='N/A')
             
             # ✅ DYNAMIC SL/TP CALCULATION berdasarkan entry real
-            risk_amount = abs(entry_price_real - signal.sl)  # Risk dari sinyal original
+            risk_amount = abs(entry_price_real - sl_price)  # ✅ Use converted sl_price
             
             # Hitung SL/TP baru berdasarkan entry real untuk jaga RR konsisten
             if signal.direction == 'BUY':

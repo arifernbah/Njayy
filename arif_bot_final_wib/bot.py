@@ -245,33 +245,28 @@ class ICTBot:
                     if (utc_now - last_entry[pair]).total_seconds() < 20*60:
                         return False
             
+            # ✅ CRITICAL FIX: Convert all price fields to float to prevent NumPy errors
+            try:
+                entry_price = float(signal.entry)
+                sl_price = float(signal.sl)
+                tp1_price = float(signal.tp1)
+                tp2_price = float(signal.tp2)
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.error(f"❌ Signal price conversion error in validation: {e}")
+                logger.error(f"Signal data: entry={getattr(signal, 'entry', 'N/A')}, sl={getattr(signal, 'sl', 'N/A')}, tp1={getattr(signal, 'tp1', 'N/A')}, tp2={getattr(signal, 'tp2', 'N/A')}")
+                self.log_rejected_signal(signal, "PRICE_CONVERSION_ERROR", f"Price conversion error: {e}")
+                return False
+            
+            # Validate prices are positive
+            if entry_price <= 0 or sl_price <= 0 or tp1_price <= 0 or tp2_price <= 0:
+                logger.error(f"❌ Invalid prices detected in validation: entry={entry_price}, sl={sl_price}, tp1={tp1_price}, tp2={tp2_price}")
+                self.log_rejected_signal(signal, "INVALID_PRICES", f"Non-positive prices detected")
+                return False
+            
             # ✅ NEW: Price Deviation Validation
             try:
                 current_price = self.trader.get_current_price_enhanced(pair)
                 if current_price and current_price > 0:
-                    # ✅ ENHANCED: Validate signal attributes exist
-                    if not hasattr(signal, 'entry') or not hasattr(signal, 'sl') or not hasattr(signal, 'tp1') or not hasattr(signal, 'tp2'):
-                        logger.error(f"Signal missing required attributes: entry={hasattr(signal, 'entry')}, sl={hasattr(signal, 'sl')}, tp1={hasattr(signal, 'tp1')}, tp2={hasattr(signal, 'tp2')}")
-                        self.log_rejected_signal(signal, "MISSING_ATTRIBUTES", "Signal missing entry/sl/tp1/tp2 attributes")
-                        return False
-                    
-                    # ✅ ENHANCED: Validate signal prices are numeric
-                    try:
-                        entry_price = float(signal.entry)
-                        sl_price = float(signal.sl)
-                        tp1_price = float(signal.tp1)
-                        tp2_price = float(signal.tp2)
-                    except (ValueError, TypeError) as e:
-                        logger.error(f"Signal prices are not numeric: {e}")
-                        self.log_rejected_signal(signal, "INVALID_PRICES", f"Prices not numeric: entry={signal.entry}, sl={signal.sl}, tp1={signal.tp1}, tp2={signal.tp2}")
-                        return False
-                    
-                    # ✅ ENHANCED: Validate prices are positive
-                    if entry_price <= 0 or sl_price <= 0 or tp1_price <= 0 or tp2_price <= 0:
-                        logger.error(f"Signal contains non-positive prices: entry={entry_price}, sl={sl_price}, tp1={tp1_price}, tp2={tp2_price}")
-                        self.log_rejected_signal(signal, "NON_POSITIVE_PRICES", f"Non-positive prices detected")
-                        return False
-                    
                     # Check entry price deviation
                     entry_deviation = abs(entry_price - current_price) / current_price
                     if entry_deviation > config.SIGNAL_MAX_ENTRY_DEVIATION:
@@ -333,29 +328,30 @@ class ICTBot:
     def execute_signal(self, signal, bias):
         """Execute validated signal with ICT quality enhancements and price validation"""
         try:
+            # ✅ CRITICAL FIX: Convert all price fields to float to prevent NumPy errors
+            try:
+                entry_price = float(signal.entry)
+                sl_price = float(signal.sl)
+                tp1_price = float(signal.tp1)
+                tp2_price = float(signal.tp2)
+            except (ValueError, TypeError, AttributeError) as e:
+                logger.error(f"❌ Signal price conversion error in execution: {e}")
+                logger.error(f"Signal data: entry={getattr(signal, 'entry', 'N/A')}, sl={getattr(signal, 'sl', 'N/A')}, tp1={getattr(signal, 'tp1', 'N/A')}, tp2={getattr(signal, 'tp2', 'N/A')}")
+                self.log_rejected_signal(signal, "EXECUTION_PRICE_CONVERSION_ERROR", f"Price conversion error: {e}")
+                return False
+            
+            # Validate prices are positive
+            if entry_price <= 0 or sl_price <= 0 or tp1_price <= 0 or tp2_price <= 0:
+                logger.error(f"❌ Invalid prices detected in execution: entry={entry_price}, sl={sl_price}, tp1={tp1_price}, tp2={tp2_price}")
+                self.log_rejected_signal(signal, "EXECUTION_INVALID_PRICES", f"Non-positive prices detected")
+                return False
+            
             # ✅ NEW: Final Price Validation before execution
             pair = getattr(signal, 'pair', None) or getattr(signal, 'symbol', None)
             if pair:
                 try:
                     current_price = self.trader.get_current_price_enhanced(pair)
                     if current_price and current_price > 0:
-                        # ✅ ENHANCED: Validate signal entry price
-                        if not hasattr(signal, 'entry'):
-                            logger.error(f"Signal missing entry price for execution")
-                            self.log_rejected_signal(signal, "EXECUTION_MISSING_ENTRY", "Signal missing entry price")
-                            return False
-                        
-                        try:
-                            entry_price = float(signal.entry)
-                            if entry_price <= 0:
-                                logger.error(f"Signal entry price is not positive: {entry_price}")
-                                self.log_rejected_signal(signal, "EXECUTION_INVALID_ENTRY", f"Entry price not positive: {entry_price}")
-                                return False
-                        except (ValueError, TypeError) as e:
-                            logger.error(f"Signal entry price is not numeric: {e}")
-                            self.log_rejected_signal(signal, "EXECUTION_INVALID_ENTRY_TYPE", f"Entry price not numeric: {signal.entry}")
-                            return False
-                        
                         entry_deviation = abs(entry_price - current_price) / current_price
                         if entry_deviation > config.SIGNAL_EXECUTION_DEVIATION:
                             logger.warning(f"❌ Signal ditolak: Market price terlalu jauh untuk execution ({entry_deviation:.2%} > {config.SIGNAL_EXECUTION_DEVIATION:.2%})")
