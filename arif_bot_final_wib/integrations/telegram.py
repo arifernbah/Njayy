@@ -53,29 +53,55 @@ class TelegramBot:
             return False
     
     def send_message(self, message, parse_mode="Markdown"):
-        """Send message to Telegram with retry"""
+        """Send message to Telegram with enhanced error handling"""
+        if not config.ENABLE_TELEGRAM:
+            logger.info(f"Telegram disabled. Message: {message[:100]}...")
+            return True
+            
         for attempt in range(3):
             try:
-                if not config.ENABLE_TELEGRAM:
-                    logger.info(f"Telegram disabled. Message: {message}")
-                    return True
                 url = f"{self.base_url}/sendMessage"
                 payload = {
                     'chat_id': self.chat_id,
                     'text': message,
                     'parse_mode': parse_mode
                 }
-                response = requests.post(url, json=payload, timeout=10)
+                
+                response = requests.post(url, json=payload, timeout=15)
+                
                 if response.status_code == 200:
-                    logger.info("Telegram message sent successfully")
+                    logger.info("✅ Telegram message sent successfully")
                     return True
                 else:
-                    error_msg = safe_get(response.json(), 'description', 'Unknown error')
-                    logger.error(f"Telegram send failed (attempt {attempt+1}): {error_msg}")
+                    error_data = response.json() if response.content else {}
+                    error_msg = safe_get(error_data, 'description', 'Unknown error')
+                    error_code = safe_get(error_data, 'error_code', 'N/A')
+                    
+                    logger.error(f"❌ Telegram send failed (attempt {attempt+1}): {error_msg} (code: {error_code})")
+                    
+                    # Handle specific error codes
+                    if error_code == 400:
+                        logger.error("Bad Request - Check message format and chat_id")
+                    elif error_code == 401:
+                        logger.error("Unauthorized - Check bot token")
+                    elif error_code == 403:
+                        logger.error("Forbidden - Bot not in chat or no permission")
+                    elif error_code == 429:
+                        logger.error("Rate limited - Too many requests")
+                        time.sleep(5)  # Wait longer for rate limits
+                        continue
+                        
+            except requests.exceptions.Timeout:
+                logger.error(f"⏰ Telegram timeout (attempt {attempt+1})")
+                time.sleep(3)
+            except requests.exceptions.ConnectionError:
+                logger.error(f"🌐 Telegram connection error (attempt {attempt+1})")
+                time.sleep(3)
             except Exception as e:
-                logger.error(f"Telegram send error (attempt {attempt+1}): {e}")
-            time.sleep(2)
-        logger.error(f"Telegram send failed after 3 attempts: {message}")
+                logger.error(f"❌ Telegram send error (attempt {attempt+1}): {e}")
+                time.sleep(2)
+                
+        logger.error(f"❌ Telegram send failed after 3 attempts: {message[:100]}...")
         return False
 
     # ===== UNIFIED TRADING ALERTS =====

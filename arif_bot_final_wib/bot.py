@@ -423,29 +423,51 @@ class ICTBot:
             return safe_get(self.risk_management, 'minimum_risk', default=config.MINIMUM_RISK/100)
 
     def send_startup_message(self):
-        """Send startup message to Telegram"""
+        """Send startup message to Telegram with enhanced error handling"""
         if not config.ENABLE_TELEGRAM:
+            logger.info("Telegram disabled, skipping startup message")
             return
+        
         try:
+            # Test Telegram connection first
+            if not telegram.test_connection():
+                logger.error("❌ Telegram connection failed, skipping startup message")
+                return
+            
+            # Send simple startup message first
             from datetime import timedelta
             utc_now = datetime.utcnow()
             wib_now = utc_now + timedelta(hours=7)
-            pairs = ', '.join(self.trading_pairs)
-            msg = (
-                f"👋 Hai, aku Arif_Bot!  \n"
-                f"Mulai tugas: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB\n"
-                f"Hari ini siap trading, jangan galak-galak ya~\n\n"
-                f"Pairs: {pairs}\n"
-                f"Target sinyal: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}/hari\n"
-                f"Risk: {safe_get(self.risk_management, 'default_risk', default=config.DEFAULT_RISK/100)*100:.0f}% per trade\n"
-                f"Quality minimal: {safe_get(self.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE)}\n\n"
-                f"Status: Lagi mantau market, siap cari cuan! 🚦\n\n"
-                f"(Psst... Kalau aku error, jangan salahin aku, salahin market aja 😆)"
-            )
-            telegram.send_message(msg)
-            telegram.send_main_menu()  # Show main menu keyboard after startup
+            
+            simple_msg = f"🤖 Arif_Bot Started\nTime: {wib_now.strftime('%H:%M:%S')} WIB"
+            
+            if telegram.send_message(simple_msg):
+                logger.info("✅ Simple startup message sent successfully")
+                
+                # Wait a bit then send detailed message
+                time.sleep(1)
+                
+                # Prepare detailed message
+                pairs = ', '.join(self.trading_pairs)
+                detailed_msg = (
+                    f"📊 *BOT DETAILS*\n"
+                    f"Pairs: {pairs}\n"
+                    f"Target: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}/hari\n"
+                    f"Risk: {safe_get(self.risk_management, 'default_risk', default=config.DEFAULT_RISK/100)*100:.0f}%\n"
+                    f"Quality: {safe_get(self.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE)}\n"
+                    f"Status: 🟢 Running"
+                )
+                
+                telegram.send_message(detailed_msg)
+                telegram.send_main_menu()
+                
+            else:
+                logger.error("❌ Failed to send simple startup message")
+                
         except Exception as e:
             logger.error(f"Startup message error: {e}")
+            # Bot tetap jalan meski Telegram error
+            logger.info("Bot will continue running without Telegram notifications")
 
     def update_status(self):
         """Update bot status"""
