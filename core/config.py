@@ -90,6 +90,7 @@ class Config:
         # Bot Settings
         self.LOOP_INTERVAL = int(os.getenv('LOOP_INTERVAL', 60))  # seconds
         self.ENABLE_TELEGRAM = os.getenv('ENABLE_TELEGRAM', 'True').lower() == 'true'
+        self.TELEGRAM_COOLDOWN = int(os.getenv('TELEGRAM_COOLDOWN', 300))  # 5 minutes default
         
         # Leverage Settings (from .env.template)
         self.LEVERAGE = int(os.getenv('LEVERAGE', 5))

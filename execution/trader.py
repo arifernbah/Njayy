@@ -54,6 +54,18 @@ class EnhancedICTTrader:
         self.last_entry_time = {}
         self._last_balance_error_time = 0
         
+        # Telegram spam prevention
+        self._last_telegram_alerts = {
+            'circuit_breaker_balance': 0,
+            'circuit_breaker_drawdown': 0,
+            'circuit_breaker_losses': 0,
+            'circuit_breaker_api': 0,
+            'circuit_breaker_positions': 0,
+            'emergency_shutdown': 0,
+            'balance_error': 0
+        }
+        self._telegram_cooldown = config.TELEGRAM_COOLDOWN  # Configurable cooldown
+        
         # Start monitoring thread
         self.monitoring_active = True
         self.monitoring_thread = threading.Thread(target=self._monitoring_loop)
@@ -417,10 +429,28 @@ class EnhancedICTTrader:
             import time as _time
             now = _time.time()
             if now - self._last_balance_error_time > 300:  # 5 menit
-                telegram.send_message(f"❌ Gagal cek saldo: {e}")
+                self._send_telegram_alert('balance_error', f"❌ Gagal cek saldo: {e}")
                 self._last_balance_error_time = now
             logger.error(f"Failed to get balance: {e}")
             return 0.0
+
+    def _send_telegram_alert(self, alert_type, message):
+        """Send Telegram alert with cooldown to prevent spam"""
+        try:
+            import time
+            current_time = time.time()
+            last_alert_time = self._last_telegram_alerts.get(alert_type, 0)
+            
+            if current_time - last_alert_time > self._telegram_cooldown:
+                if config.ENABLE_TELEGRAM:
+                    telegram.send_message(message)
+                self._last_telegram_alerts[alert_type] = current_time
+                logger.info(f"[TELEGRAM] Alert sent: {alert_type}")
+            else:
+                logger.debug(f"[TELEGRAM] Alert suppressed (cooldown): {alert_type}")
+                
+        except Exception as e:
+            logger.error(f"[TELEGRAM] Error sending alert: {e}")
 
     def check_circuit_breaker(self):
         """Enhanced circuit breaker with multiple safety checks"""
@@ -428,31 +458,31 @@ class EnhancedICTTrader:
             # Check consecutive losses
             if self.performance['consecutive_losses'] >= 5:
                 logger.warning("[CIRCUIT BREAKER] 5 consecutive losses - trading paused")
-                if config.ENABLE_TELEGRAM:
-                    telegram.send_message("🚨 CIRCUIT BREAKER: 5 consecutive losses - trading paused for safety")
+                self._send_telegram_alert('circuit_breaker_losses', 
+                    "🚨 CIRCUIT BREAKER: 5 consecutive losses - trading paused for safety")
                 return False
             
             # Check drawdown limit
             current_drawdown = self.get_drawdown()
             if current_drawdown > config.MAX_DRAWDOWN:
                 logger.warning(f"[CIRCUIT BREAKER] Drawdown {current_drawdown:.2f}% exceeds limit {config.MAX_DRAWDOWN}%")
-                if config.ENABLE_TELEGRAM:
-                    telegram.send_message(f"🚨 CIRCUIT BREAKER: Drawdown {current_drawdown:.2f}% exceeds limit")
+                self._send_telegram_alert('circuit_breaker_drawdown', 
+                    f"🚨 CIRCUIT BREAKER: Drawdown {current_drawdown:.2f}% exceeds limit")
                 return False
             
             # Check balance minimum
             balance = self.get_account_balance()
             if balance < config.MIN_BALANCE:
                 logger.warning(f"[CIRCUIT BREAKER] Balance too low: ${balance:.2f} (min: ${config.MIN_BALANCE})")
-                if config.ENABLE_TELEGRAM:
-                    telegram.send_message(f"🚨 CIRCUIT BREAKER: Balance too low (${balance:.2f}) - minimum required: ${config.MIN_BALANCE}")
+                self._send_telegram_alert('circuit_breaker_balance', 
+                    f"🚨 CIRCUIT BREAKER: Balance too low (${balance:.2f}) - minimum required: ${config.MIN_BALANCE}")
                 return False
             
             # Check API connection health
             if self.connection_retry_count > 10:
                 logger.warning("[CIRCUIT BREAKER] Too many API connection failures")
-                if config.ENABLE_TELEGRAM:
-                    telegram.send_message("🚨 CIRCUIT BREAKER: API connection issues")
+                self._send_telegram_alert('circuit_breaker_api', 
+                    "🚨 CIRCUIT BREAKER: API connection issues")
                 return False
             
             # Check for stuck positions
@@ -463,8 +493,8 @@ class EnhancedICTTrader:
             
             if stuck_positions > 2:
                 logger.warning(f"[CIRCUIT BREAKER] Too many stuck positions: {stuck_positions}")
-                if config.ENABLE_TELEGRAM:
-                    telegram.send_message(f"🚨 CIRCUIT BREAKER: {stuck_positions} stuck positions detected")
+                self._send_telegram_alert('circuit_breaker_positions', 
+                    f"🚨 CIRCUIT BREAKER: {stuck_positions} stuck positions detected")
                 return False
             
             return True
@@ -478,8 +508,7 @@ class EnhancedICTTrader:
         try:
             logger.error(f"[EMERGENCY SHUTDOWN] Triggered: {reason}")
             
-            if config.ENABLE_TELEGRAM:
-                telegram.send_message(f"🚨 EMERGENCY SHUTDOWN: {reason}")
+            self._send_telegram_alert('emergency_shutdown', f"🚨 EMERGENCY SHUTDOWN: {reason}")
             
             # Close all positions
             for pos_id, position in list(self.active_positions.items()):
