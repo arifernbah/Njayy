@@ -51,6 +51,7 @@ class Config:
         self.MAX_OPEN_POSITIONS = int(os.getenv('MAX_OPEN_POSITIONS', 2))
         self.MAX_DRAWDOWN = float(os.getenv('MAX_DRAWDOWN', 10.0))
         self.DEFAULT_RISK = float(os.getenv('DEFAULT_RISK', 0.01))
+        self.MIN_BALANCE = float(os.getenv('MIN_BALANCE', 5.0))  # Minimum balance for trading
         
         # Additional Trading Settings
         self.REDUCED_RISK = float(os.getenv('REDUCED_RISK', 1.0))

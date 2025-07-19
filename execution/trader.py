@@ -49,6 +49,11 @@ class EnhancedICTTrader:
         self.api_call_times = defaultdict(list)
         self.max_calls_per_minute = 50
         
+        # State management
+        self.stuck_alert_sent = set()
+        self.last_entry_time = {}
+        self._last_balance_error_time = 0
+        
         # Start monitoring thread
         self.monitoring_active = True
         self.monitoring_thread = threading.Thread(target=self._monitoring_loop)
@@ -437,10 +442,10 @@ class EnhancedICTTrader:
             
             # Check balance minimum
             balance = self.get_account_balance()
-            if balance < 10:  # Minimum 10 USDT
-                logger.warning(f"[CIRCUIT BREAKER] Balance too low: ${balance:.2f}")
+            if balance < config.MIN_BALANCE:
+                logger.warning(f"[CIRCUIT BREAKER] Balance too low: ${balance:.2f} (min: ${config.MIN_BALANCE})")
                 if config.ENABLE_TELEGRAM:
-                    telegram.send_message(f"🚨 CIRCUIT BREAKER: Balance too low (${balance:.2f})")
+                    telegram.send_message(f"🚨 CIRCUIT BREAKER: Balance too low (${balance:.2f}) - minimum required: ${config.MIN_BALANCE}")
                 return False
             
             # Check API connection health
@@ -567,11 +572,11 @@ class EnhancedICTTrader:
             # Get position from Binance
             positions = self._execute_with_retry(
                 self.client.futures_position_information,
-                symbol=self.symbol
+                symbol=position_id  # Use position_id as symbol
             )
             
             if not positions:
-                logger.warning(f"[POSITION] No position data received for {self.symbol}")
+                logger.warning(f"[POSITION] No position data received for {position_id}")
                 return False
             
             # Find our position
@@ -592,7 +597,7 @@ class EnhancedICTTrader:
                         entry_diff = abs(entry_price - tracked_entry)
                         
                         if size_diff > 0.001 or entry_diff > 0.01:  # Allow small differences
-                            logger.warning(f"[POSITION] Position mismatch for {self.symbol}: size_diff={size_diff}, entry_diff={entry_diff}")
+                            logger.warning(f"[POSITION] Position mismatch for {position_id}: size_diff={size_diff}, entry_diff={entry_diff}")
                             # Update our tracking with real data
                             self.active_positions[position_id].update({
                                 'size': abs(position_amt),
@@ -603,7 +608,7 @@ class EnhancedICTTrader:
                     return True
             
             # Position not found on Binance
-            logger.warning(f"[POSITION] Position {position_id} not found on Binance for {self.symbol}")
+            logger.warning(f"[POSITION] Position {position_id} not found on Binance")
             return False
             
         except Exception as e:
