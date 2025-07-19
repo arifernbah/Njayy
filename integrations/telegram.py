@@ -81,7 +81,7 @@ class TelegramBot:
     # ===== UNIFIED TRADING ALERTS =====
     def send_trade_alert(self, signal, bias, risk, position_size):
         """Unified trade alert with ICT quality information"""
-        timestamp = datetime.utcnow().strftime("%H:%M UTC")
+        timestamp = (datetime.utcnow() + timedelta(hours=7)).strftime("%H:%M WIB")
         
         # Quality indicators
         quality_emoji = {
@@ -109,7 +109,7 @@ class TelegramBot:
 {quality_icon} *QUALITY*: {signal.quality_class} ({signal.quality_score}/100)
 {zone_icon} *ZONE*: {signal.zone_position}
 📌 *PAIR*: {signal.pair}
-🕒 *Time*: {timestamp}
+🕒 *Waktu*: {timestamp}
 📊 *Bias*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=50):.1f})
 🧠 *Signal Strength*: {signal.strength}
 
@@ -292,7 +292,7 @@ Status: {'🟢 Safe' if current_dd < config.MAX_DRAWDOWN else '🔴 Warning'}
             for pos_id, pos in active_positions.items():
                 try:
                     pnl = self.bot_instance.trader._calculate_position_pnl(pos)
-                    opened_time = pos.get('opened_at', datetime.utcnow()).strftime('%H:%M')
+                    opened_time = (pos.get('opened_at', datetime.utcnow()) + timedelta(hours=7)).strftime('%H:%M WIB')
                     
                     message += f"""
 🎯 *{pos['symbol']} {pos['direction']}*
@@ -405,7 +405,7 @@ Status: {'🟢 Safe' if current_dd < config.MAX_DRAWDOWN else '🔴 Warning'}
             message = f"""
 👋 *ARIF BOT STARTED*
 
-🕒 Time: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB
+🕒 Waktu: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB
 🤖 Version: {bot_version}
 👨‍💻 Author: {author}
 
@@ -420,12 +420,12 @@ Status: 🟢 Ready for trading!
     def send_error_alert(self, error_msg, error_type="General"):
         """Send error alert"""
         try:
-            timestamp = datetime.utcnow().strftime("%H:%M UTC")
+            timestamp = (datetime.utcnow() + timedelta(hours=7)).strftime("%H:%M WIB")
             message = f"""
 🚨 *ERROR ALERT*
 
 Type: {error_type}
-Time: {timestamp}
+Waktu: {timestamp}
 Error: {error_msg}
 
 Status: Bot continues running

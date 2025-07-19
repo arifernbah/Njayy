@@ -1433,11 +1433,12 @@ class EnhancedICTTrader:
             self.cancel_all_orders(position)
             
         # Send final summary
+        wib_now = (datetime.utcnow() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S')
         telegram.send_message(
             f"🔄 *BOT SHUTDOWN*\n"
             f"Final Statistics:\n"
             f"📊 Performance: {self.get_enhanced_performance()}\n"
-            f"⏰ Shutdown time: {datetime.utcnow()}"
+            f"⏰ Waktu: {wib_now} WIB"
         )
         
         # Save state saat shutdown

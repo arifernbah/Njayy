@@ -147,7 +147,7 @@ class ICTBot:
 
     def check_session(self):
         """Check if current time is within trading session"""
-        current_time = datetime.utcnow().strftime("%H:%M")
+        current_time = (datetime.utcnow() + timedelta(hours=7)).strftime("%H:%M")
         
         for session, times in self.sessions.items():
             if times['start'] <= current_time <= times['end']:
