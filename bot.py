@@ -406,7 +406,7 @@ class ICTBot:
     def calculate_risk(self):
         """Calculate risk based on account conditions"""
         try:
-            # ✅ FIXED: Use proper risk defaults from config
+            # ✅ FIXED: Use proper risk defaults from config (values are in percentage)
             risk = safe_get(self.risk_management, 'default_risk', default=config.DEFAULT_RISK/100)
             
             # Check drawdown

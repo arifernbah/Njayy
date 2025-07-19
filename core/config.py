@@ -50,12 +50,14 @@ class Config:
         self.MAX_DAILY_TRADES = int(os.getenv('MAX_DAILY_TRADES', 6))
         self.MAX_OPEN_POSITIONS = int(os.getenv('MAX_OPEN_POSITIONS', 2))
         self.MAX_DRAWDOWN = float(os.getenv('MAX_DRAWDOWN', 10.0))
-        self.DEFAULT_RISK = float(os.getenv('DEFAULT_RISK', 0.01))
+        # ✅ FIXED: Use proper risk defaults that match .env.template
+        self.DEFAULT_RISK = float(os.getenv('DEFAULT_RISK', 1.0))  # 1.0% default
         self.MIN_BALANCE = float(os.getenv('MIN_BALANCE', 5.0))  # Minimum balance for trading
         
         # Additional Trading Settings
-        self.REDUCED_RISK = float(os.getenv('REDUCED_RISK', 1.0))
-        self.MINIMUM_RISK = float(os.getenv('MINIMUM_RISK', 0.5))
+        # ✅ FIXED: Use proper risk defaults that match .env.template
+        self.REDUCED_RISK = float(os.getenv('REDUCED_RISK', 0.5))  # 0.5% reduced
+        self.MINIMUM_RISK = float(os.getenv('MINIMUM_RISK', 0.25))  # 0.25% minimum
         self.MAX_CONCURRENT_TRADES = int(os.getenv('MAX_CONCURRENT_TRADES', 2))
         
         # Signal Filters
