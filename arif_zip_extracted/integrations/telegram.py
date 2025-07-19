@@ -374,5 +374,117 @@ class TelegramBot:
         """Set a custom handler for incoming messages"""
         self.message_handler = handler
 
+    def send_enhanced_status(self, bot_instance):
+        """Send enhanced status with performance metrics"""
+        try:
+            from datetime import timedelta
+            utc_now = datetime.utcnow()
+            wib_now = utc_now + timedelta(hours=7)
+            
+            # Get enhanced performance
+            performance = bot_instance.trader.get_enhanced_performance()
+            
+            # Calculate uptime
+            uptime = bot_instance.get_uptime()
+            
+            message = f"""
+🤖 *BOT STATUS REPORT*
+
+📅 *Date*: {wib_now.strftime('%Y-%m-%d %H:%M:%S')} WIB
+⏱️ *Uptime*: {uptime}
+📊 *Active Positions*: {performance.get('active_positions', 0)}
+🔢 *Daily Trades*: {performance.get('daily_trades', 0)}/{performance.get('max_daily_trades', 0)}
+
+📈 *PERFORMANCE METRICS*:
+• Total Trades: {performance.get('total_trades', 0)}
+• Win Rate: {performance.get('win_rate', 0):.1f}%
+• Profit Factor: {performance.get('profit_factor', 0):.2f}
+• Sharpe Ratio: {performance.get('sharpe_ratio', 0):.2f}
+• Current Drawdown: {performance.get('current_drawdown', 0):.2f}%
+• Max Drawdown: {performance.get('max_drawdown', 0):.2f}%
+
+💰 *PNL SUMMARY*:
+• Total PnL: ${performance.get('total_pnl', 0):.2f}
+• Daily PnL: ${performance.get('daily_pnl', 0):.2f}
+• Avg Win: ${performance.get('avg_win', 0):.2f}
+• Avg Loss: ${performance.get('avg_loss', 0):.2f}
+
+🎯 *TRADING PAIRS*: {', '.join(bot_instance.trading_pairs[:5])}{'...' if len(bot_instance.trading_pairs) > 5 else ''}
+            """
+            
+            return self.send_message(message)
+            
+        except Exception as e:
+            logger.error(f"Error sending enhanced status: {e}")
+            return False
+
+    def send_cleanup_command(self, bot_instance):
+        """Send cleanup command result"""
+        try:
+            # Perform cleanup
+            bot_instance.trader.cleanup_orphaned_positions()
+            
+            # Get updated status
+            active_positions = len(bot_instance.trader.active_positions)
+            
+            message = f"""
+🧹 *CLEANUP COMPLETED*
+
+✅ Orphaned positions cleaned up
+📊 Active positions: {active_positions}
+🕒 Time: {datetime.utcnow().strftime('%H:%M UTC')}
+
+Bot is now optimized and ready for trading!
+            """
+            
+            return self.send_message(message)
+            
+        except Exception as e:
+            logger.error(f"Error in cleanup command: {e}")
+            return self.send_message(f"❌ Cleanup failed: {e}")
+
+    def send_performance_report(self, bot_instance):
+        """Send detailed performance report"""
+        try:
+            performance = bot_instance.trader.get_enhanced_performance()
+            
+            # Calculate win/loss streak
+            consecutive_losses = performance.get('consecutive_losses', 0)
+            streak_emoji = "🔴" if consecutive_losses > 0 else "🟢"
+            
+            message = f"""
+📊 *DETAILED PERFORMANCE REPORT*
+
+🎯 *TRADE STATISTICS*:
+• Total Trades: {performance.get('total_trades', 0)}
+• Wins: {performance.get('wins', 0)}
+• Losses: {performance.get('losses', 0)}
+• Win Rate: {performance.get('win_rate', 0):.1f}%
+{streak_emoji} Consecutive Losses: {consecutive_losses}
+
+💰 *FINANCIAL METRICS*:
+• Total PnL: ${performance.get('total_pnl', 0):.2f}
+• Profit Factor: {performance.get('profit_factor', 0):.2f}
+• Sharpe Ratio: {performance.get('sharpe_ratio', 0):.2f}
+• Avg Win: ${performance.get('avg_win', 0):.2f}
+• Avg Loss: ${performance.get('avg_loss', 0):.2f}
+
+📉 *RISK METRICS*:
+• Current Drawdown: {performance.get('current_drawdown', 0):.2f}%
+• Max Drawdown: {performance.get('max_drawdown', 0):.2f}%
+• Max Balance: ${performance.get('max_balance', 0):.2f}
+• Min Balance: ${performance.get('min_balance', 0):.2f}
+
+📈 *CURRENT STATUS*:
+• Active Positions: {performance.get('active_positions', 0)}
+• Daily Trades: {performance.get('daily_trades', 0)}/{performance.get('max_daily_trades', 0)}
+            """
+            
+            return self.send_message(message)
+            
+        except Exception as e:
+            logger.error(f"Error sending performance report: {e}")
+            return False
+
 # Create global telegram instance
 telegram = TelegramBot()

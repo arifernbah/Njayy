@@ -178,17 +178,25 @@ class EnhancedICTTrader:
     def _monitoring_loop(self):
         """Background monitoring for health checks and maintenance"""
         last_log_hour = None
+        last_cleanup_hour = None
         while self.monitoring_active:
             try:
                 self._health_check()
                 self._cleanup_old_api_calls()
                 self._update_market_volatility()
                 self._daily_summary_check()
+                
                 # Log equity every hour
                 now = datetime.utcnow()
                 if last_log_hour is None or now.hour != last_log_hour:
                     self.log_equity(event="PERIODIC")
                     last_log_hour = now.hour
+                
+                # ✅ Cleanup orphaned positions every 2 hours
+                if last_cleanup_hour is None or (now - last_cleanup_hour).total_seconds() > 7200:  # 2 hours
+                    self.cleanup_orphaned_positions()
+                    last_cleanup_hour = now
+                
                 time.sleep(60)  # Check every minute
             except Exception as e:
                 logger.error(f"Monitoring loop error: {e}")
@@ -244,26 +252,103 @@ class EnhancedICTTrader:
             logger.error(f"Failed to update volatility: {e}")
 
     def _daily_summary_check(self):
-        """Send daily summary at midnight"""
-        now = datetime.utcnow()
-        if now.hour == 0 and now.minute == 0:
-            self._send_daily_summary()
+        """Check if it's time to send daily summary and reset counters"""
+        try:
+            now = datetime.utcnow()
+            current_date = now.strftime('%Y-%m-%d')
+            
+            # Check if we need to reset daily counters
+            if not hasattr(self, '_last_reset_date') or self._last_reset_date != current_date:
+                self._reset_daily_counters()
+                self._last_reset_date = current_date
+                
+                # Send daily summary if we have trades
+                if self.daily_trades > 0:
+                    self._send_daily_summary()
+                    
+        except Exception as e:
+            logger.error(f"Daily summary check error: {e}")
+
+    def _reset_daily_counters(self):
+        """Reset daily counters and performance metrics"""
+        try:
+            logger.info("[DAILY RESET] Resetting daily counters...")
+            
+            # Reset daily trade counter
+            self.daily_trades = 0
+            
+            # Reset daily PnL
+            self.performance['daily_pnl'] = 0.0
+            
+            # Reset daily returns
+            if 'daily_returns' in self.performance:
+                self.performance['daily_returns'] = []
+            
+            # Reset last entry times
+            if hasattr(self, 'last_entry_time'):
+                self.last_entry_time = {}
+            
+            # Reset stuck alert flags
+            if hasattr(self, 'stuck_alert_sent'):
+                self.stuck_alert_sent = set()
+            
+            # Save state after reset
+            self.save_state()
+            
+            logger.info("[DAILY RESET] Daily counters reset completed")
+            
+            if config.ENABLE_TELEGRAM:
+                telegram.send_message("🔄 Daily counters reset - ready for new trading day!")
+                
+        except Exception as e:
+            logger.error(f"Error resetting daily counters: {e}")
 
     def _send_daily_summary(self):
-        """Send daily performance summary"""
-        total_trades = self.performance['wins'] + self.performance['losses']
-        win_rate = (self.performance['wins'] / total_trades * 100) if total_trades > 0 else 0
-        
-        telegram.send_message(
-            f"📊 *DAILY SUMMARY*\n"
-            f"📈 Total Trades: {total_trades}\n"
-            f"✅ Wins: {self.performance['wins']}\n"
-            f"❌ Losses: {self.performance['losses']}\n"
-            f"🎯 Win Rate: {win_rate:.1f}%\n"
-            f"💰 Daily PnL: ${self.performance['daily_pnl']:.2f}\n"
-            f"📊 Market Volatility: {self.market_volatility:.2f}%\n"
-            f"🔄 Active Positions: {len(self.active_positions)}"
-        )
+        """Send comprehensive daily summary"""
+        try:
+            performance = self.get_enhanced_performance()
+            
+            # Calculate daily statistics
+            daily_trades = self.daily_trades
+            daily_pnl = performance.get('daily_pnl', 0)
+            win_rate = performance.get('win_rate', 0)
+            
+            # Get current balance
+            current_balance = self.get_account_balance()
+            
+            # Calculate daily return
+            daily_return = 0
+            if performance.get('max_balance', 0) > 0:
+                daily_return = ((current_balance - performance['max_balance']) / performance['max_balance']) * 100
+            
+            message = f"""
+📊 *DAILY SUMMARY*
+
+📅 Date: {datetime.utcnow().strftime('%Y-%m-%d')}
+🎯 Daily Trades: {daily_trades}
+💰 Daily PnL: ${daily_pnl:.2f}
+📈 Daily Return: {daily_return:.2f}%
+🎯 Win Rate: {win_rate:.1f}%
+
+📊 *PERFORMANCE METRICS*:
+• Total Trades: {performance.get('total_trades', 0)}
+• Profit Factor: {performance.get('profit_factor', 0):.2f}
+• Sharpe Ratio: {performance.get('sharpe_ratio', 0):.2f}
+• Current Drawdown: {performance.get('current_drawdown', 0):.2f}%
+
+💼 *ACCOUNT STATUS*:
+• Current Balance: ${current_balance:.2f}
+• Max Balance: ${performance.get('max_balance', 0):.2f}
+• Active Positions: {performance.get('active_positions', 0)}
+
+{'🎉 Excellent day!' if daily_pnl > 0 else '📉 Tough day, but tomorrow is another opportunity!'}
+            """
+            
+            if config.ENABLE_TELEGRAM:
+                telegram.send_message(message)
+                
+        except Exception as e:
+            logger.error(f"Error sending daily summary: {e}")
 
     def _rate_limit_check(self, endpoint):
         """Check API rate limits"""
@@ -326,21 +411,119 @@ class EnhancedICTTrader:
             return 0.0
 
     def check_circuit_breaker(self):
-        """Check if trading should be stopped due to risk limits"""
-        if self.daily_trades >= self.max_daily_trades:
-            logger.warning("Daily trade limit reached")
-            return False
+        """Enhanced circuit breaker with multiple safety checks"""
+        try:
+            # Check consecutive losses
+            if self.performance['consecutive_losses'] >= 5:
+                logger.warning("[CIRCUIT BREAKER] 5 consecutive losses - trading paused")
+                if config.ENABLE_TELEGRAM:
+                    telegram.send_message("🚨 CIRCUIT BREAKER: 5 consecutive losses - trading paused for safety")
+                return False
             
-        if self.performance['consecutive_losses'] >= self.max_consecutive_losses:
-            logger.warning("Consecutive loss limit reached")
-            telegram.send_message(
-                f"🛑 *CIRCUIT BREAKER ACTIVATED*\n"
-                f"Consecutive losses: {self.performance['consecutive_losses']}\n"
-                f"Trading suspended for safety"
-            )
-            return False
+            # Check drawdown limit
+            current_drawdown = self.get_drawdown()
+            if current_drawdown > config.MAX_DRAWDOWN:
+                logger.warning(f"[CIRCUIT BREAKER] Drawdown {current_drawdown:.2f}% exceeds limit {config.MAX_DRAWDOWN}%")
+                if config.ENABLE_TELEGRAM:
+                    telegram.send_message(f"🚨 CIRCUIT BREAKER: Drawdown {current_drawdown:.2f}% exceeds limit")
+                return False
             
-        return True
+            # Check balance minimum
+            balance = self.get_account_balance()
+            if balance < 10:  # Minimum 10 USDT
+                logger.warning(f"[CIRCUIT BREAKER] Balance too low: ${balance:.2f}")
+                if config.ENABLE_TELEGRAM:
+                    telegram.send_message(f"🚨 CIRCUIT BREAKER: Balance too low (${balance:.2f})")
+                return False
+            
+            # Check API connection health
+            if self.connection_retry_count > 10:
+                logger.warning("[CIRCUIT BREAKER] Too many API connection failures")
+                if config.ENABLE_TELEGRAM:
+                    telegram.send_message("🚨 CIRCUIT BREAKER: API connection issues")
+                return False
+            
+            # Check for stuck positions
+            stuck_positions = 0
+            for pos_id, position in self.active_positions.items():
+                if not self.verify_position_active(pos_id):
+                    stuck_positions += 1
+            
+            if stuck_positions > 2:
+                logger.warning(f"[CIRCUIT BREAKER] Too many stuck positions: {stuck_positions}")
+                if config.ENABLE_TELEGRAM:
+                    telegram.send_message(f"🚨 CIRCUIT BREAKER: {stuck_positions} stuck positions detected")
+                return False
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"[CIRCUIT BREAKER] Error in circuit breaker check: {e}")
+            return False  # Fail safe - don't trade if we can't check
+
+    def emergency_shutdown(self, reason="Unknown"):
+        """Emergency shutdown with cleanup"""
+        try:
+            logger.error(f"[EMERGENCY SHUTDOWN] Triggered: {reason}")
+            
+            if config.ENABLE_TELEGRAM:
+                telegram.send_message(f"🚨 EMERGENCY SHUTDOWN: {reason}")
+            
+            # Close all positions
+            for pos_id, position in list(self.active_positions.items()):
+                try:
+                    self.cancel_all_orders(position)
+                    logger.info(f"[EMERGENCY] Cancelled orders for position {pos_id}")
+                except Exception as e:
+                    logger.error(f"[EMERGENCY] Failed to cancel orders for {pos_id}: {e}")
+            
+            # Save state
+            self.save_state()
+            
+            # Stop monitoring
+            self.monitoring_active = False
+            
+            logger.info("[EMERGENCY] Shutdown completed")
+            
+        except Exception as e:
+            logger.error(f"[EMERGENCY] Error during shutdown: {e}")
+
+    def recover_from_error(self, error_type, error_msg):
+        """Recover from different types of errors"""
+        try:
+            logger.warning(f"[RECOVERY] Attempting to recover from {error_type}: {error_msg}")
+            
+            if error_type == "API_ERROR":
+                # Wait and retry
+                time.sleep(30)
+                self.connection_retry_count += 1
+                
+            elif error_type == "POSITION_ERROR":
+                # Cleanup orphaned positions
+                self.cleanup_orphaned_positions()
+                
+            elif error_type == "ORDER_ERROR":
+                # Cancel all pending orders
+                for pos_id, position in list(self.active_positions.items()):
+                    self.cancel_all_orders(position)
+                
+            elif error_type == "BALANCE_ERROR":
+                # Check balance and pause if needed
+                balance = self.get_account_balance()
+                if balance < 10:
+                    logger.error("[RECOVERY] Balance too low, cannot recover")
+                    return False
+            
+            # Reset error counters if recovery successful
+            if self.connection_retry_count > 0:
+                self.connection_retry_count = max(0, self.connection_retry_count - 1)
+            
+            logger.info(f"[RECOVERY] Recovery from {error_type} completed")
+            return True
+            
+        except Exception as e:
+            logger.error(f"[RECOVERY] Error during recovery: {e}")
+            return False
 
     def calculate_adaptive_position_size(self, signal, base_risk_percent=2):
         """Calculate position size with volatility adjustment"""
@@ -372,14 +555,78 @@ class EnhancedICTTrader:
             return 0
 
     def verify_position_active(self, position_id):
-        """Verify if position is still active on exchange"""
+        """Enhanced position verification with comprehensive checks"""
         try:
-            positions = self._execute_with_retry(self.client.futures_position_information)
-            return any(float(safe_get(pos, 'positionAmt', default=0)) != 0 for pos in positions 
-                      if safe_get(pos, 'symbol', default='') == self.symbol)
-        except Exception as e:
-            logger.error(f"Failed to verify position: {e}")
+            # Get position from Binance
+            positions = self._execute_with_retry(
+                self.client.futures_position_information,
+                symbol=self.symbol
+            )
+            
+            if not positions:
+                logger.warning(f"[POSITION] No position data received for {self.symbol}")
+                return False
+            
+            # Find our position
+            for pos in positions:
+                if abs(float(safe_get(pos, 'positionAmt', default=0))) > 0:
+                    # Position exists on Binance
+                    position_amt = float(safe_get(pos, 'positionAmt', default=0))
+                    entry_price = float(safe_get(pos, 'entryPrice', default=0))
+                    
+                    # Validate against our tracking
+                    tracked_position = self.active_positions.get(position_id)
+                    if tracked_position:
+                        tracked_size = safe_get(tracked_position, 'size', default=0)
+                        tracked_entry = safe_get(tracked_position, 'entry', default=0)
+                        
+                        # Check if position matches our tracking
+                        size_diff = abs(position_amt) - tracked_size
+                        entry_diff = abs(entry_price - tracked_entry)
+                        
+                        if size_diff > 0.001 or entry_diff > 0.01:  # Allow small differences
+                            logger.warning(f"[POSITION] Position mismatch for {self.symbol}: size_diff={size_diff}, entry_diff={entry_diff}")
+                            # Update our tracking with real data
+                            self.active_positions[position_id].update({
+                                'size': abs(position_amt),
+                                'entry': entry_price,
+                                'last_validation': datetime.utcnow()
+                            })
+                    
+                    return True
+            
+            # Position not found on Binance
+            logger.warning(f"[POSITION] Position {position_id} not found on Binance for {self.symbol}")
             return False
+            
+        except Exception as e:
+            logger.error(f"[POSITION] Error verifying position {position_id}: {e}")
+            return False
+
+    def cleanup_orphaned_positions(self):
+        """Clean up positions that no longer exist on Binance"""
+        try:
+            orphaned_positions = []
+            
+            for pos_id, position in list(self.active_positions.items()):
+                if not self.verify_position_active(pos_id):
+                    orphaned_positions.append(pos_id)
+                    logger.warning(f"[CLEANUP] Orphaned position detected: {pos_id}")
+            
+            # Remove orphaned positions
+            for pos_id in orphaned_positions:
+                del self.active_positions[pos_id]
+                logger.info(f"[CLEANUP] Removed orphaned position: {pos_id}")
+            
+            if orphaned_positions and config.ENABLE_TELEGRAM:
+                telegram.send_message(
+                    f"🧹 *POSITION CLEANUP*\n"
+                    f"Removed {len(orphaned_positions)} orphaned position(s)\n"
+                    f"Active positions: {len(self.active_positions)}"
+                )
+                
+        except Exception as e:
+            logger.error(f"[CLEANUP] Error cleaning orphaned positions: {e}")
 
     def cancel_all_orders(self, position):
         """Cancel all pending orders for a position"""
@@ -612,12 +859,26 @@ class EnhancedICTTrader:
             # Ambil harga entry/orderId real dari respons Binance
             entry_price_real = safe_get(entry_order, 'avgFillPrice', default=safe_get(entry_order, 'price', default=signal.entry))
             order_id = safe_get(entry_order, 'orderId', default='N/A')
-            # 2. Place STOP_MARKET for SL (cek dulu, cancel jika sudah ada)
+            
+            # ✅ DYNAMIC SL/TP CALCULATION berdasarkan entry real
+            risk_amount = abs(entry_price_real - signal.sl)  # Risk dari sinyal original
+            
+            # Hitung SL/TP baru berdasarkan entry real untuk jaga RR konsisten
+            if signal.direction == 'BUY':
+                sl_real = entry_price_real - risk_amount
+                tp1_real = entry_price_real + (risk_amount * 1.2)  # RR 1:1.2
+                tp2_real = entry_price_real + (risk_amount * 2.0)  # RR 1:2
+            else:  # SELL
+                sl_real = entry_price_real + risk_amount
+                tp1_real = entry_price_real - (risk_amount * 1.2)  # RR 1:1.2
+                tp2_real = entry_price_real - (risk_amount * 2.0)  # RR 1:2
+            
+            # 2. Place STOP_MARKET for SL dengan harga real
             sl_order = None
             if 'orders' in entry_order and entry_order['orders'].get('sl_order'):
                 # Cancel SL lama jika ada
                 self.cancel_all_orders({'orders': {'sl_order': entry_order['orders']['sl_order']}})
-            sl_order = self.place_stop_market_order_enhanced(opposite_side, signal.sl, position_size)
+            sl_order = self.place_stop_market_order_enhanced(opposite_side, sl_real, position_size)
             if not sl_order:
                 logger.warning("Failed to place SL order - CRITICAL!")
                 # Cancel entry if SL placement fails
@@ -628,13 +889,13 @@ class EnhancedICTTrader:
             tp2_size = round(position_size * 0.3, 4)
             tp1_order = self.place_market_tp_order_enhanced(opposite_side, tp1_size)
             tp2_order = self.place_market_tp_order_enhanced(opposite_side, tp2_size)
-            # 4. Track the position
+            # 4. Track the position dengan harga real
             self.track_position_enhanced(signal, entry_order, position_size, {
                 'sl_order': sl_order,
                 'tp1_order': tp1_order,
                 'tp2_order': tp2_order,
                 'entry_order': entry_order
-            })
+            }, entry_price_real, sl_real, tp1_real, tp2_real)
             self.daily_trades += 1
             # Enhanced telegram notification
             wib_now = (datetime.utcnow() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S')
@@ -643,10 +904,10 @@ class EnhancedICTTrader:
                 f"Order ID: {order_id}\n"
                 f"📌 PAIR: {self.symbol}\n"
                 f"🎯 Direction: {signal.direction}\n"
-                f"💰 Entry (real): ${entry_price_real}\n"
-                f"🛑 SL: ${signal.sl:.2f}\n"
-                f"🎯 TP1: MARKET ORDER (70%) - Auto execute\n"
-                f"🎯 TP2: MARKET ORDER (30%) - Auto execute\n"
+                f"💰 Entry (real): ${entry_price_real:.2f}\n"
+                f"🛑 SL (real): ${sl_real:.2f}\n"
+                f"🎯 TP1: MARKET ORDER (70%) - RR 1:1.2\n"
+                f"🎯 TP2: MARKET ORDER (30%) - RR 1:2\n"
                 f"📊 Size: {position_size}\n"
                 f"💹 Market Vol: {self.market_volatility:.2f}%\n"
                 f"🔢 Daily Trades: {self.daily_trades}/{self.max_daily_trades}\n"
@@ -661,15 +922,22 @@ class EnhancedICTTrader:
             logger.error(f"Execute entry error: {e}")
             return False
 
-    def track_position_enhanced(self, signal, entry_order, size, orders):
+    def track_position_enhanced(self, signal, entry_order, size, orders, entry_real=None, sl_real=None, tp1_real=None, tp2_real=None):
         """Enhanced position tracking with more metadata"""
         position_id = safe_get(entry_order, 'orderId', default=0)
+        
+        # ✅ Gunakan harga real jika tersedia, fallback ke harga sinyal
+        entry_price = entry_real if entry_real is not None else signal.entry
+        sl_price = sl_real if sl_real is not None else signal.sl
+        tp1_price = tp1_real if tp1_real is not None else signal.tp1
+        tp2_price = tp2_real if tp2_real is not None else signal.tp2
+        
         self.active_positions[position_id] = {
             'symbol': self.symbol,
-            'entry': signal.entry,
-            'sl': signal.sl,
-            'tp1': signal.tp1,
-            'tp2': signal.tp2,
+            'entry': entry_price,
+            'sl': sl_price,
+            'tp1': tp1_price,
+            'tp2': tp2_price,
             'size': size,
             'direction': signal.direction,
             'opened_at': datetime.utcnow(),
@@ -835,11 +1103,12 @@ class EnhancedICTTrader:
                     symbol=self.symbol,
                     orderId=safe_get(safe_get(position, 'orders', default={})['sl_order'], 'orderId', default=0)
                 )
-            # Place new SL at break-even
+            # Place new SL at break-even (gunakan entry real)
             opposite_side = 'SELL' if safe_get(position, 'direction', default='') == 'BUY' else 'BUY'
+            entry_price = safe_get(position, 'entry', default=0)
             new_sl_order = self.place_stop_market_order_enhanced(
                 opposite_side, 
-                safe_get(position, 'entry', default=0),
+                entry_price,  # SL di entry price (breakeven)
                 safe_get(position, 'size', default=0)
             )
             if new_sl_order:
@@ -847,10 +1116,11 @@ class EnhancedICTTrader:
                 self.active_positions[pos_id]['sl_moved_to_be'] = True
                 # Send notification
                 if not safe_get(position, 'notifications', default={})['sl_be_notified']:
+                    entry_price = safe_get(position, 'entry', default=0)
                     telegram.send_message(
                         f"📈 *SL MOVED TO BREAKEVEN*\n"
                         f"📌 PAIR: {self.symbol}\n"
-                        f"🛡️ Risk eliminated - SL at entry: ${safe_get(position, 'entry', default=0):.2f}\n"
+                        f"🛡️ Risk eliminated - SL at entry: ${entry_price:.2f}\n"
                         f"💹 Current Price: ${self.get_current_price_enhanced(self.symbol):.2f}"
                     )
                     self.active_positions[pos_id]['notifications']['sl_be_notified'] = True
@@ -998,19 +1268,89 @@ class EnhancedICTTrader:
             logger.error(f"Failed to activate trailing stop: {e}")
 
     def get_enhanced_performance(self):
-        """Get comprehensive performance statistics"""
-        total_trades = self.performance['wins'] + self.performance['losses']
-        win_rate = (self.performance['wins'] / total_trades * 100) if total_trades > 0 else 0
-        
-        return {
-            **self.performance,
-            'total_trades': total_trades,
-            'win_rate': win_rate,
-            'active_positions': len(self.active_positions),
-            'daily_trades': self.daily_trades,
-            'market_volatility': self.market_volatility,
-            'connection_health': self.connection_retry_count < 3
-        }
+        """Enhanced performance metrics with detailed analysis"""
+        try:
+            total_trades = self.performance['wins'] + self.performance['losses']
+            win_rate = (self.performance['wins'] / total_trades * 100) if total_trades > 0 else 0
+            
+            # Calculate additional metrics
+            avg_win = self.performance.get('total_wins', 0) / self.performance['wins'] if self.performance['wins'] > 0 else 0
+            avg_loss = self.performance.get('total_losses', 0) / self.performance['losses'] if self.performance['losses'] > 0 else 0
+            profit_factor = abs(avg_win / avg_loss) if avg_loss != 0 else 0
+            
+            # Calculate drawdown
+            current_drawdown = self.get_drawdown()
+            max_drawdown = self.get_max_drawdown()
+            
+            # Calculate Sharpe ratio (simplified)
+            daily_returns = self.performance.get('daily_returns', [])
+            sharpe_ratio = 0
+            if len(daily_returns) > 1:
+                avg_return = sum(daily_returns) / len(daily_returns)
+                std_return = (sum((r - avg_return) ** 2 for r in daily_returns) / len(daily_returns)) ** 0.5
+                sharpe_ratio = avg_return / std_return if std_return != 0 else 0
+            
+            return {
+                'total_trades': total_trades,
+                'wins': self.performance['wins'],
+                'losses': self.performance['losses'],
+                'win_rate': win_rate,
+                'total_pnl': self.performance['total_pnl'],
+                'daily_pnl': self.performance['daily_pnl'],
+                'avg_win': avg_win,
+                'avg_loss': avg_loss,
+                'profit_factor': profit_factor,
+                'current_drawdown': current_drawdown,
+                'max_drawdown': max_drawdown,
+                'sharpe_ratio': sharpe_ratio,
+                'consecutive_losses': self.performance['consecutive_losses'],
+                'max_balance': self.performance['max_balance'],
+                'min_balance': self.performance['min_balance'],
+                'active_positions': len(self.active_positions),
+                'daily_trades': self.daily_trades,
+                'max_daily_trades': self.max_daily_trades
+            }
+        except Exception as e:
+            logger.error(f"Error calculating enhanced performance: {e}")
+            return {}
+
+    def update_performance_metrics(self, trade_result):
+        """Update performance metrics after trade completion"""
+        try:
+            pnl = trade_result.get('pnl', 0)
+            is_win = pnl > 0
+            
+            if is_win:
+                self.performance['wins'] += 1
+                self.performance['consecutive_losses'] = 0
+                self.performance['total_wins'] = self.performance.get('total_wins', 0) + pnl
+            else:
+                self.performance['losses'] += 1
+                self.performance['consecutive_losses'] += 1
+                self.performance['total_losses'] = self.performance.get('total_losses', 0) + abs(pnl)
+            
+            # Update balance tracking
+            current_balance = self.get_account_balance()
+            self.performance['max_balance'] = max(self.performance['max_balance'], current_balance)
+            self.performance['min_balance'] = min(self.performance['min_balance'], current_balance)
+            
+            # Update daily returns
+            if 'daily_returns' not in self.performance:
+                self.performance['daily_returns'] = []
+            
+            # Calculate daily return
+            if len(self.performance['daily_returns']) > 0:
+                daily_return = (current_balance - self.performance['max_balance']) / self.performance['max_balance']
+                self.performance['daily_returns'].append(daily_return)
+            
+            # Keep only last 30 days
+            if len(self.performance['daily_returns']) > 30:
+                self.performance['daily_returns'] = self.performance['daily_returns'][-30:]
+            
+            logger.info(f"[PERFORMANCE] Trade completed: {'WIN' if is_win else 'LOSS'} (PnL: ${pnl:.2f})")
+            
+        except Exception as e:
+            logger.error(f"Error updating performance metrics: {e}")
 
     def get_active_trades(self):
         # Mengembalikan jumlah posisi aktif yang sedang dimonitor bot

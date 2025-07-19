@@ -45,35 +45,61 @@ class ICTBot:
 
     async def websocket_candle_handler(self):
         """Websocket handler untuk menerima candle close dari Binance dan trigger strategi secara real-time."""
-        client = await AsyncClient.create(config.BINANCE_API_KEY, config.BINANCE_API_SECRET)
-        try:
-            bm = BinanceSocketManager(client)
-            interval = self.default_interval.lower()
-            streams = [f"{pair.lower()}@kline_{interval}" for pair in self.trading_pairs]
-            multi_stream = bm.multiplex_socket(streams)
-            async with multi_stream as stream:
-                while True:
-                    res = await stream.recv()
-                    if res and 'data' in res and 'k' in res['data']:
-                        kline = res['data']['k']
-                        if safe_get(kline, 'x', default=False):  # Hanya proses saat candle close
-                            symbol = safe_get(res, 'data', 's', default='')
-                            candle = {
-                                'timestamp': safe_get(kline, 't', default=0),
-                                'open': float(safe_get(kline, 'o', default=0)),
-                                'high': float(safe_get(kline, 'h', default=0)),
-                                'low': float(safe_get(kline, 'l', default=0)),
-                                'close': float(safe_get(kline, 'c', default=0)),
-                                'volume': float(safe_get(kline, 'v', default=0)),
-                                'close_time': safe_get(kline, 'T', default=0)
-                            }
-                            from datetime import datetime
-                            candle_close_time = datetime.utcnow()
-                            logger.info(f"[ENTRY TIMING] Candle close received at {candle_close_time.isoformat()} for {symbol}")
-                            # Trigger entry (pastikan proses ini secepat mungkin)
-                            self.strategy.on_new_candle(symbol, candle, self.analyzer, candle_close_time)
-        finally:
-            await client.aclose()
+        max_reconnect_attempts = 5
+        reconnect_delay = 5  # seconds
+        
+        for attempt in range(max_reconnect_attempts):
+            try:
+                client = await AsyncClient.create(config.BINANCE_API_KEY, config.BINANCE_API_SECRET)
+                bm = BinanceSocketManager(client)
+                interval = self.default_interval.lower()
+                streams = [f"{pair.lower()}@kline_{interval}" for pair in self.trading_pairs]
+                multi_stream = bm.multiplex_socket(streams)
+                
+                logger.info(f"[WEBSOCKET] Connected to {len(streams)} streams (attempt {attempt + 1})")
+                
+                async with multi_stream as stream:
+                    while True:
+                        try:
+                            res = await stream.recv()
+                            if res and 'data' in res and 'k' in res['data']:
+                                kline = res['data']['k']
+                                if safe_get(kline, 'x', default=False):  # Hanya proses saat candle close
+                                    symbol = safe_get(res, 'data', 's', default='')
+                                    candle = {
+                                        'timestamp': safe_get(kline, 't', default=0),
+                                        'open': float(safe_get(kline, 'o', default=0)),
+                                        'high': float(safe_get(kline, 'h', default=0)),
+                                        'low': float(safe_get(kline, 'l', default=0)),
+                                        'close': float(safe_get(kline, 'c', default=0)),
+                                        'volume': float(safe_get(kline, 'v', default=0)),
+                                        'close_time': safe_get(kline, 'T', default=0)
+                                    }
+                                    from datetime import datetime
+                                    candle_close_time = datetime.utcnow()
+                                    logger.info(f"[ENTRY TIMING] Candle close received at {candle_close_time.isoformat()} for {symbol}")
+                                    # Trigger entry (pastikan proses ini secepat mungkin)
+                                    self.strategy.on_new_candle(symbol, candle, self.analyzer, candle_close_time)
+                        except Exception as e:
+                            logger.error(f"[WEBSOCKET] Error processing message: {e}")
+                            continue  # Continue processing other messages
+                            
+            except Exception as e:
+                logger.error(f"[WEBSOCKET] Connection error (attempt {attempt + 1}): {e}")
+                if attempt < max_reconnect_attempts - 1:
+                    logger.info(f"[WEBSOCKET] Reconnecting in {reconnect_delay} seconds...")
+                    await asyncio.sleep(reconnect_delay)
+                    reconnect_delay *= 2  # Exponential backoff
+                else:
+                    logger.error("[WEBSOCKET] Max reconnection attempts reached. Stopping bot.")
+                    if config.ENABLE_TELEGRAM:
+                        telegram.send_message("🚨 WEBSOCKET ERROR: Bot stopped due to connection issues")
+                    break
+            finally:
+                try:
+                    await client.aclose()
+                except:
+                    pass
 
     def start(self):
         """Initialize and start the bot (websocket version)"""
@@ -322,35 +348,72 @@ if __name__ == "__main__":
         if str(chat_id) != str(config.TELEGRAM_CHAT_ID):
             telegram.send_message("⚠️ Unauthorized access.")
             return
+        
         if text == "/start":
             telegram.send_message("👋 Hai! Aku Arif_Bot, siap membantu trading kamu. Ketik /help untuk daftar perintah.")
             telegram.send_main_menu()
             return
+        
         if text == "/status":
-            telegram.send_message("✅ Bot status: Aktif dan berjalan")
+            # ✅ ENHANCED: Use new enhanced status
+            telegram.send_enhanced_status(ICTBot.instance)
         elif text == "/balance":
             trader = EnhancedICTTrader()
             balance = trader.get_account_balance()
-            telegram.send_message(f"💰 Saldo USDT saat ini: {balance}")
+            telegram.send_message(f"💰 Saldo USDT saat ini: {balance:.2f}")
         elif text == "/drawdown":
             trader = EnhancedICTTrader()
             drawdown = trader.get_drawdown()
-            telegram.send_message(f"📉 Drawdown saat ini: {drawdown:.2f}%")
+            max_drawdown = trader.get_max_drawdown()
+            telegram.send_message(f"📉 Drawdown saat ini: {drawdown:.2f}%\n📊 Max Drawdown: {max_drawdown:.2f}%")
+        elif text == "/performance":
+            # ✅ NEW: Detailed performance report
+            telegram.send_performance_report(ICTBot.instance)
+        elif text == "/cleanup":
+            # ✅ NEW: Cleanup orphaned positions
+            telegram.send_cleanup_command(ICTBot.instance)
+        elif text == "/positions":
+            # ✅ NEW: Show active positions
+            active_positions = ICTBot.instance.trader.active_positions
+            if not active_positions:
+                telegram.send_message("📊 Tidak ada posisi aktif saat ini.")
+            else:
+                msg = "📊 *AKTIF POSITIONS:*\n\n"
+                for pos_id, pos in active_positions.items():
+                    pnl = ICTBot.instance.trader._calculate_position_pnl(pos)
+                    msg += f"🎯 {pos['symbol']} {pos['direction']}\n"
+                    msg += f"💰 Entry: ${pos['entry']:.2f}\n"
+                    msg += f"🛑 SL: ${pos['sl']:.2f}\n"
+                    msg += f"📊 Size: {pos['size']}\n"
+                    msg += f"📈 PnL: ${pnl:.2f}\n"
+                    msg += f"⏰ Opened: {pos['opened_at'].strftime('%H:%M')}\n\n"
+                telegram.send_message(msg)
         elif text == "/help":
             telegram.send_message("""
-📖 Daftar Perintah:
-/status - Cek status bot
+📖 *Daftar Perintah Lengkap:*
+
+🔍 *STATUS & MONITORING:*
+/status - Status bot dengan metrics lengkap
+/performance - Laporan performa detail
 /balance - Cek saldo USDT
 /drawdown - Cek drawdown saat ini
-/summary - Ringkasan performa harian
-/settings - Lihat setting utama bot
+/positions - Lihat posisi aktif
 /uptime - Lama bot berjalan
+
+⚙️ *MANAGEMENT:*
+/settings - Lihat setting utama bot
+/cleanup - Bersihkan orphaned positions
 /pause - Pause trading
 /resume - Lanjutkan trading
-/help - Lihat daftar command
 /shutdown - Matikan bot
-""")
-            telegram.send_main_menu()  # Show main menu keyboard on /help
+
+📊 *REPORTS:*
+/summary - Ringkasan performa harian
+/help - Lihat daftar command
+
+💡 *Tips:* Gunakan /status untuk monitoring real-time!
+            """)
+            telegram.send_main_menu()
         elif text == "/summary":
             telegram.send_message(ICTBot.instance.get_summary())
         elif text == "/settings":
@@ -365,9 +428,11 @@ if __name__ == "__main__":
             telegram.send_message("▶️ Trading resumed. Bot akan entry seperti biasa.")
         elif text == "/shutdown":
             telegram.send_message("🛑 Bot akan dimatikan...")
+            # ✅ ENHANCED: Proper shutdown
+            ICTBot.instance.trader.shutdown()
             exit(0)
         else:
-            telegram.send_message(f"⚠️ Perintah tidak dikenali: {text}")
+            telegram.send_message(f"⚠️ Perintah tidak dikenali: {text}\nKetik /help untuk daftar perintah yang tersedia.")
 
     ICTBot.instance = None
     bot = ICTBot()

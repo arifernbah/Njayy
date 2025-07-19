@@ -114,7 +114,7 @@ class Config:
         self._validate_config()
     
     def _validate_config(self):
-        """Validate critical configuration settings"""
+        """Enhanced configuration validation with comprehensive checks"""
         critical_settings = [
             ('BINANCE_API_KEY', self.BINANCE_API_KEY),
             ('BINANCE_SECRET', self.BINANCE_SECRET),
@@ -130,7 +130,7 @@ class Config:
         if missing_settings:
             raise ValueError(f"Missing critical environment variables: {', '.join(missing_settings)}")
         
-        # Validate numeric ranges
+        # ✅ Enhanced numeric range validation
         if self.DEFAULT_RISK > 10:
             raise ValueError("DEFAULT_RISK should not exceed 10%")
         
@@ -140,13 +140,75 @@ class Config:
         if self.MIN_SIGNAL_STRENGTH < 0 or self.MIN_SIGNAL_STRENGTH > 100:
             raise ValueError("MIN_SIGNAL_STRENGTH should be between 0 and 100")
         
-        # ✅ Validate trading pairs
+        if self.MIN_BIAS_STRENGTH < 0 or self.MIN_BIAS_STRENGTH > 100:
+            raise ValueError("MIN_BIAS_STRENGTH should be between 0 and 100")
+        
+        if self.MIN_REGIME_SCORE < 0 or self.MIN_REGIME_SCORE > 100:
+            raise ValueError("MIN_REGIME_SCORE should be between 0 and 100")
+        
+        if self.MIN_QUALITY_SCORE < 0 or self.MIN_QUALITY_SCORE > 100:
+            raise ValueError("MIN_QUALITY_SCORE should be between 0 and 100")
+        
+        # ✅ Trading pair validation
         if not self.TRADING_PAIRS or len(self.TRADING_PAIRS) == 0:
             raise ValueError("At least one trading pair must be configured")
         
-        # ✅ Validate top volume settings
+        # ✅ Validate pair format
+        for pair in self.TRADING_PAIRS:
+            if not pair.endswith('USDT'):
+                raise ValueError(f"Invalid trading pair format: {pair}. Must end with USDT")
+        
+        # ✅ Top volume settings validation
         if self.USE_TOP_VOLUME_PAIRS and self.TOP_VOLUME_COUNT <= 0:
             raise ValueError("TOP_VOLUME_COUNT must be greater than 0")
+        
+        if self.USE_TOP_VOLUME_PAIRS and self.TOP_VOLUME_COUNT > 50:
+            raise ValueError("TOP_VOLUME_COUNT should not exceed 50 for performance reasons")
+        
+        # ✅ Leverage validation
+        if self.LEVERAGE < 1 or self.LEVERAGE > 125:
+            raise ValueError("LEVERAGE should be between 1 and 125")
+        
+        # ✅ Timeframe validation
+        valid_timeframes = ['1m', '3m', '5m', '15m', '30m', '1h', '2h', '4h', '6h', '8h', '12h', '1d', '3d', '1w', '1M']
+        if self.DEFAULT_INTERVAL not in valid_timeframes:
+            raise ValueError(f"Invalid DEFAULT_INTERVAL: {self.DEFAULT_INTERVAL}. Must be one of {valid_timeframes}")
+        
+        # ✅ Session time validation
+        try:
+            from datetime import datetime
+            datetime.strptime(self.LONDON_START, '%H:%M')
+            datetime.strptime(self.LONDON_END, '%H:%M')
+            datetime.strptime(self.NY_START, '%H:%M')
+            datetime.strptime(self.NY_END, '%H:%M')
+            datetime.strptime(self.ASIAN_START, '%H:%M')
+            datetime.strptime(self.ASIAN_END, '%H:%M')
+        except ValueError as e:
+            raise ValueError(f"Invalid session time format: {e}. Use HH:MM format")
+        
+        # ✅ Log level validation
+        valid_log_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
+        if self.LOG_LEVEL.upper() not in valid_log_levels:
+            raise ValueError(f"Invalid LOG_LEVEL: {self.LOG_LEVEL}. Must be one of {valid_log_levels}")
+        
+        # ✅ Performance target validation
+        if self.TARGET_WIN_RATE < 0 or self.TARGET_WIN_RATE > 100:
+            raise ValueError("TARGET_WIN_RATE should be between 0 and 100")
+        
+        if self.SIGNAL_TARGET_MIN < 0 or self.SIGNAL_TARGET_MAX < self.SIGNAL_TARGET_MIN:
+            raise ValueError("Invalid signal target range")
+        
+        # ✅ Risk management validation
+        if self.MAX_DAILY_TRADES < 1 or self.MAX_DAILY_TRADES > 50:
+            raise ValueError("MAX_DAILY_TRADES should be between 1 and 50")
+        
+        if self.MAX_OPEN_POSITIONS < 1 or self.MAX_OPEN_POSITIONS > 10:
+            raise ValueError("MAX_OPEN_POSITIONS should be between 1 and 10")
+        
+        if self.MAX_CONCURRENT_TRADES < 1 or self.MAX_CONCURRENT_TRADES > 5:
+            raise ValueError("MAX_CONCURRENT_TRADES should be between 1 and 5")
+        
+        print("✅ Configuration validation passed successfully")
     
     def get_risk_settings(self):
         """Get risk management settings as dict"""
