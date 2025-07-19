@@ -110,7 +110,7 @@ class TelegramBot:
 {zone_icon} *ZONE*: {signal.zone_position}
 📌 *PAIR*: {signal.pair}
 🕒 *Time*: {timestamp}
-📊 *Bias*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=0):.1f})
+📊 *Bias*: {safe_get(bias, 'direction', default='N/A')} ({safe_get(bias, 'strength', default=50):.1f})
 🧠 *Signal Strength*: {signal.strength}
 
 🎯 *ENTRY*: {signal.entry}
@@ -188,7 +188,7 @@ class TelegramBot:
 
 🎯 *TODAY'S TARGET*:
 • Signals: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}
-• Risk per Trade: {safe_get(self.bot_instance.risk_management, 'default_risk', default=0)*100:.1f}%
+• Risk per Trade: {safe_get(self.bot_instance.risk_management, 'default_risk', default=config.DEFAULT_RISK/100)*100:.1f}%
             """
             
             return self.send_message(message)

@@ -240,7 +240,7 @@ class BiasAnalyzer:
                 'valid': overall_bias > 35,
                 'strength': overall_bias,
                 'regime': regime,
-                'regime_score': safe_get(regime, 'score', default=0),
+                'regime_score': safe_get(regime, 'score', default=50),
                 'volatility': volatility,
                 'timeframe_scores': {
                     'daily': daily_score,
@@ -561,9 +561,9 @@ class BiasAnalyzer:
             summary = f"""
 📊 **BIAS ANALYSIS - {symbol}**
 
-🎯 **Overall Bias**: {safe_get(bias_data, 'direction', default='N/A')} ({safe_get(bias_data, 'strength', default=0):.1f}/100)
-📈 **Regime**: {safe_get(bias_data, 'regime', default={})['type']} ({safe_get(bias_data, 'regime', default={})['confidence']})
-📊 **Volatility**: {safe_get(bias_data, 'volatility', default=0)}%
+🎯 **Overall Bias**: {safe_get(bias_data, 'direction', default='N/A')} ({safe_get(bias_data, 'strength', default=50):.1f}/100)
+📊 **Regime**: {safe_get(bias_data, 'regime', {}).get('type', 'UNKNOWN')} ({safe_get(bias_data, 'regime_score', default=50):.1f}/100)
+📊 **Volatility**: {safe_get(bias_data, 'volatility', default=1.0)}%
 
 **Timeframe Breakdown:**
 • Daily: {safe_get(bias_data, 'timeframe_scores', default={})['daily']:.1f}
