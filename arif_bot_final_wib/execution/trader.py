@@ -294,85 +294,70 @@ class EnhancedICTTrader:
             logger.error(f"Daily summary check error: {e}")
 
     def _reset_daily_counters(self):
-        """Reset daily counters and performance metrics"""
+        """Reset daily counters and send summary"""
         try:
-            logger.info("[DAILY RESET] Resetting daily counters...")
+            # Send summary before reset
+            self._send_daily_summary()
             
-            # Reset daily trade counter
+            # Reset counters
             self.daily_trades = 0
+            self._margin_failures_count = 0
+            self._entry_failures_count = 0
+            self._last_margin_alert = None
+            self._last_entry_failed_alert = None
             
-            # Reset daily PnL
-            self.performance['daily_pnl'] = 0.0
+            logger.info("Daily counters reset")
             
-            # Reset daily returns
-            if 'daily_returns' in self.performance:
-                self.performance['daily_returns'] = []
-            
-            # Reset last entry times
-            if hasattr(self, 'last_entry_time'):
-                self.last_entry_time = {}
-            
-            # Reset stuck alert flags
-            if hasattr(self, 'stuck_alert_sent'):
-                self.stuck_alert_sent = set()
-            
-            # Save state after reset
-            self.save_state()
-            
-            logger.info("[DAILY RESET] Daily counters reset completed")
-            
-            if config.ENABLE_TELEGRAM:
-                telegram.send_message("🔄 Daily counters reset - ready for new trading day!")
-                
         except Exception as e:
             logger.error(f"Error resetting daily counters: {e}")
 
     def _send_daily_summary(self):
-        """Send comprehensive daily summary"""
+        """Send daily summary of trading activity and issues"""
         try:
-            performance = self.get_enhanced_performance()
+            if not config.ENABLE_TELEGRAM:
+                return
             
-            # Calculate daily statistics
+            # Get failure counts
+            margin_failures = getattr(self, '_margin_failures_count', 0)
+            entry_failures = getattr(self, '_entry_failures_count', 0)
             daily_trades = self.daily_trades
-            daily_pnl = performance.get('daily_pnl', 0)
-            win_rate = performance.get('win_rate', 0)
             
-            # Get current balance
-            current_balance = self.get_account_balance()
-            
-            # Calculate daily return
-            daily_return = 0
-            if performance.get('max_balance', 0) > 0:
-                daily_return = ((current_balance - performance['max_balance']) / performance['max_balance']) * 100
-            
-            message = f"""
-📊 *DAILY SUMMARY*
-
-📅 Date: {datetime.utcnow().strftime('%Y-%m-%d')}
-🎯 Daily Trades: {daily_trades}
-💰 Daily PnL: ${daily_pnl:.2f}
-📈 Daily Return: {daily_return:.2f}%
-🎯 Win Rate: {win_rate:.1f}%
-
-📊 *PERFORMANCE METRICS*:
-• Total Trades: {performance.get('total_trades', 0)}
-• Profit Factor: {performance.get('profit_factor', 0):.2f}
-• Sharpe Ratio: {performance.get('sharpe_ratio', 0):.2f}
-• Current Drawdown: {performance.get('current_drawdown', 0):.2f}%
-
-💼 *ACCOUNT STATUS*:
-• Current Balance: ${current_balance:.2f}
-• Max Balance: ${performance.get('max_balance', 0):.2f}
-• Active Positions: {performance.get('active_positions', 0)}
-
-{'🎉 Excellent day!' if daily_pnl > 0 else '📉 Tough day, but tomorrow is another opportunity!'}
-            """
-            
-            if config.ENABLE_TELEGRAM:
-                telegram.send_message(message)
+            # Only send if there are issues or trades
+            if margin_failures > 0 or entry_failures > 0 or daily_trades > 0:
+                wib_now = (datetime.utcnow() + timedelta(hours=7)).strftime('%Y-%m-%d %H:%M:%S')
+                
+                summary_msg = f"📊 *DAILY SUMMARY* - {wib_now} WIB\n\n"
+                
+                if daily_trades > 0:
+                    summary_msg += f"✅ Successful Entries: {daily_trades}\n"
+                
+                if entry_failures > 0:
+                    summary_msg += f"❌ Failed Entries: {entry_failures}\n"
+                
+                if margin_failures > 0:
+                    summary_msg += f"⚠️ Margin Issues: {margin_failures}\n"
+                
+                # Add suggestions if there are issues
+                if margin_failures > 0:
+                    summary_msg += f"\n💡 *Suggestions:*\n"
+                    summary_msg += f"• Top up balance\n"
+                    summary_msg += f"• Reduce position size\n"
+                    summary_msg += f"• Lower leverage\n"
+                
+                if entry_failures > 0:
+                    summary_msg += f"\n🔧 *Troubleshooting:*\n"
+                    summary_msg += f"• Check internet connection\n"
+                    summary_msg += f"• Verify API permissions\n"
+                    summary_msg += f"• Check market conditions\n"
+                
+                telegram.send_message(summary_msg)
+                
+                # Reset counters after sending summary
+                self._margin_failures_count = 0
+                self._entry_failures_count = 0
                 
         except Exception as e:
-            logger.error(f"Error sending daily summary: {e}")
+            logger.error(f"Failed to send daily summary: {e}")
 
     def _rate_limit_check(self, endpoint):
         """Check API rate limits"""
@@ -968,7 +953,39 @@ class EnhancedICTTrader:
             entry_order = self.place_market_order_enhanced(side, position_size)
             if not entry_order:
                 logger.error("Failed to place entry order")
-                telegram.send_message(f"❌ ENTRY FAILED! Order market tidak masuk ke Binance untuk {self.symbol}.")
+                
+                # ✅ SMART: Send entry failed notification with cooldown
+                current_time = datetime.utcnow()
+                last_entry_failed_alert = getattr(self, '_last_entry_failed_alert', None)
+                
+                # Send alert only if last alert was more than 15 minutes ago
+                should_send_alert = False
+                if last_entry_failed_alert is None:
+                    should_send_alert = True
+                elif (current_time - last_entry_failed_alert).total_seconds() > 900:  # 15 minutes
+                    should_send_alert = True
+                
+                if should_send_alert and config.ENABLE_TELEGRAM:
+                    try:
+                        # Count entry failures in this session
+                        entry_failures = getattr(self, '_entry_failures_count', 0) + 1
+                        self._entry_failures_count = entry_failures
+                        
+                        telegram.send_message(
+                            f"❌ *ENTRY FAILED* ({entry_failures}x)\n"
+                            f"📌 Pair: {self.symbol}\n"
+                            f"🎯 Direction: {signal.direction}\n"
+                            f"📊 Size: {position_size}\n"
+                            f"💰 Entry Price: ${entry_price:.2f}\n\n"
+                            f"*Note:* Alert akan dikirim lagi dalam 15 menit"
+                        )
+                        
+                        # Update last alert time
+                        self._last_entry_failed_alert = current_time
+                        
+                    except Exception as e:
+                        logger.error(f"Failed to send entry failed notification: {e}")
+                
                 return False
             # Ambil harga entry/orderId real dari respons Binance
             entry_price_real = safe_get(entry_order, 'avgFillPrice', default=safe_get(entry_order, 'price', default=entry_price))  # ✅ Use converted entry_price
@@ -1538,19 +1555,49 @@ class EnhancedICTTrader:
             if required_margin_with_buffer > balance:
                 logger.warning(f"❌ Margin tidak cukup. Dibutuhkan: {required_margin_with_buffer:.2f}, tersedia: {balance:.2f}")
                 
-                # ✅ ADD: Send Telegram notification for margin insufficient
-                if config.ENABLE_TELEGRAM:
+                # ✅ SMART: Send Telegram notification only once per session or with cooldown
+                current_time = datetime.utcnow()
+                last_margin_alert = getattr(self, '_last_margin_alert', None)
+                
+                # Send alert only if:
+                # 1. First time in this session, OR
+                # 2. Last alert was more than 30 minutes ago, OR  
+                # 3. Balance has changed significantly (>10%)
+                should_send_alert = False
+                
+                if last_margin_alert is None:
+                    should_send_alert = True
+                elif (current_time - last_margin_alert).total_seconds() > 1800:  # 30 minutes
+                    should_send_alert = True
+                else:
+                    # Check if balance changed significantly
+                    last_balance = getattr(self, '_last_margin_alert_balance', balance)
+                    balance_change = abs(balance - last_balance) / last_balance
+                    if balance_change > 0.1:  # 10% change
+                        should_send_alert = True
+                
+                if should_send_alert and config.ENABLE_TELEGRAM:
                     try:
+                        # Count how many times margin insufficient in this session
+                        margin_failures = getattr(self, '_margin_failures_count', 0) + 1
+                        self._margin_failures_count = margin_failures
+                        
                         telegram.send_message(
-                            f"⚠️ *MARGIN INSUFFICIENT*\n"
+                            f"⚠️ *MARGIN INSUFFICIENT* ({margin_failures}x)\n"
                             f"📌 Pair: {self.symbol}\n"
                             f"💰 Required: ${required_margin_with_buffer:.2f}\n"
                             f"💳 Available: ${balance:.2f}\n"
                             f"📊 Leverage: {effective_leverage}x\n"
                             f"📈 Position Size: {position_size}\n"
                             f"🎯 Entry Price: ${entry_price:.2f}\n\n"
-                            f"*Suggestion:* Top up balance or reduce position size"
+                            f"*Suggestion:* Top up balance or reduce position size\n"
+                            f"*Note:* Alert akan dikirim lagi dalam 30 menit atau jika balance berubah"
                         )
+                        
+                        # Update last alert time and balance
+                        self._last_margin_alert = current_time
+                        self._last_margin_alert_balance = balance
+                        
                     except Exception as e:
                         logger.error(f"Failed to send margin insufficient notification: {e}")
                 
