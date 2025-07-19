@@ -1037,6 +1037,11 @@ class EnhancedICTTrader:
     def get_current_price_enhanced(self, symbol):
         """Enhanced price fetching with fallback and caching"""
         try:
+            # ✅ ENHANCED: Validate symbol parameter
+            if not symbol or not isinstance(symbol, str):
+                logger.error(f"Invalid symbol parameter: {symbol}")
+                return 0
+            
             if not self._rate_limit_check('price_check'):
                 time.sleep(0.5)
                 
@@ -1044,10 +1049,30 @@ class EnhancedICTTrader:
                 self.client.futures_symbol_ticker,
                 symbol=symbol
             )
-            return float(safe_get(ticker, 'price', default=0))
+            
+            # ✅ ENHANCED: Validate ticker response
+            if not ticker or not isinstance(ticker, dict):
+                logger.error(f"Invalid ticker response for {symbol}: {ticker}")
+                return 0
+            
+            price_str = safe_get(ticker, 'price', default=None)
+            if not price_str:
+                logger.error(f"No price in ticker response for {symbol}: {ticker}")
+                return 0
+            
+            # ✅ ENHANCED: Validate price is numeric
+            try:
+                price = float(price_str)
+                if price <= 0:
+                    logger.error(f"Non-positive price for {symbol}: {price}")
+                    return 0
+                return price
+            except (ValueError, TypeError) as e:
+                logger.error(f"Price is not numeric for {symbol}: {price_str}, error: {e}")
+                return 0
             
         except Exception as e:
-            logger.error(f"Failed to get price: {e}")
+            logger.error(f"Failed to get price for {symbol}: {e}")
             return 0
 
     def manage_positions_enhanced(self):

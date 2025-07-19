@@ -171,17 +171,58 @@ class ICTBot:
     def log_rejected_signal(self, signal, reason, details=None):
         """Log rejected signals with detailed information"""
         try:
+            # ✅ ENHANCED: Validate parameters
+            if not signal:
+                logger.error("Cannot log rejected signal: signal is None")
+                return
+            
+            if not reason:
+                reason = "UNKNOWN"
+            
+            if details is None:
+                details = "No details provided"
+            
+            # ✅ ENHANCED: Safe attribute access
+            try:
+                pair = getattr(signal, 'pair', None) or getattr(signal, 'symbol', None) or "UNKNOWN"
+                direction = getattr(signal, 'direction', "UNKNOWN")
+                entry = getattr(signal, 'entry', "N/A")
+                sl = getattr(signal, 'sl', "N/A")
+                tp1 = getattr(signal, 'tp1', "N/A")
+                tp2 = getattr(signal, 'tp2', "N/A")
+            except Exception as e:
+                logger.error(f"Error accessing signal attributes: {e}")
+                pair = "UNKNOWN"
+                direction = "UNKNOWN"
+                entry = sl = tp1 = tp2 = "N/A"
+            
             # Ensure logs directory exists
             os.makedirs("logs", exist_ok=True)
-            log_line = (
-                f"[{datetime.utcnow()}] REJECTED SIGNAL: {signal.pair} {signal.direction} "
-                f"entry={signal.entry} sl={signal.sl} tp1={signal.tp1} tp2={signal.tp2} "
-                f"reason={reason} details={details}\n"
-            )
-            with open("logs/rejected_signals.log", "a") as f:
-                f.write(log_line)
+            
+            # ✅ ENHANCED: Safe string formatting
+            try:
+                log_line = (
+                    f"[{datetime.utcnow()}] REJECTED SIGNAL: {pair} {direction} "
+                    f"entry={entry} sl={sl} tp1={tp1} tp2={tp2} "
+                    f"reason={reason} details={details}\n"
+                )
+            except Exception as e:
+                logger.error(f"Error formatting log line: {e}")
+                log_line = f"[{datetime.utcnow()}] REJECTED SIGNAL: {pair} reason={reason} details={details}\n"
+            
+            # ✅ ENHANCED: Safe file writing
+            try:
+                with open("logs/rejected_signals.log", "a", encoding='utf-8') as f:
+                    f.write(log_line)
+            except (IOError, OSError) as e:
+                logger.error(f"Failed to write to rejected_signals.log: {e}")
+                # Fallback: try to write to console
+                print(f"REJECTED SIGNAL LOG: {log_line.strip()}")
+                
         except Exception as e:
             logger.error(f"Failed to log rejected signal: {e}")
+            # Last resort: print to console
+            print(f"CRITICAL: Failed to log rejected signal - {e}")
 
     def validate_signal(self, signal):
         """Enhanced signal validation with ICT quality checks and price deviation validation"""
@@ -208,29 +249,52 @@ class ICTBot:
             try:
                 current_price = self.trader.get_current_price_enhanced(pair)
                 if current_price and current_price > 0:
+                    # ✅ ENHANCED: Validate signal attributes exist
+                    if not hasattr(signal, 'entry') or not hasattr(signal, 'sl') or not hasattr(signal, 'tp1') or not hasattr(signal, 'tp2'):
+                        logger.error(f"Signal missing required attributes: entry={hasattr(signal, 'entry')}, sl={hasattr(signal, 'sl')}, tp1={hasattr(signal, 'tp1')}, tp2={hasattr(signal, 'tp2')}")
+                        self.log_rejected_signal(signal, "MISSING_ATTRIBUTES", "Signal missing entry/sl/tp1/tp2 attributes")
+                        return False
+                    
+                    # ✅ ENHANCED: Validate signal prices are numeric
+                    try:
+                        entry_price = float(signal.entry)
+                        sl_price = float(signal.sl)
+                        tp1_price = float(signal.tp1)
+                        tp2_price = float(signal.tp2)
+                    except (ValueError, TypeError) as e:
+                        logger.error(f"Signal prices are not numeric: {e}")
+                        self.log_rejected_signal(signal, "INVALID_PRICES", f"Prices not numeric: entry={signal.entry}, sl={signal.sl}, tp1={signal.tp1}, tp2={signal.tp2}")
+                        return False
+                    
+                    # ✅ ENHANCED: Validate prices are positive
+                    if entry_price <= 0 or sl_price <= 0 or tp1_price <= 0 or tp2_price <= 0:
+                        logger.error(f"Signal contains non-positive prices: entry={entry_price}, sl={sl_price}, tp1={tp1_price}, tp2={tp2_price}")
+                        self.log_rejected_signal(signal, "NON_POSITIVE_PRICES", f"Non-positive prices detected")
+                        return False
+                    
                     # Check entry price deviation
-                    entry_deviation = abs(signal.entry - current_price) / current_price
+                    entry_deviation = abs(entry_price - current_price) / current_price
                     if entry_deviation > config.SIGNAL_MAX_ENTRY_DEVIATION:
                         logger.warning(f"Signal entry terlalu jauh dari market: {entry_deviation:.2%} > {config.SIGNAL_MAX_ENTRY_DEVIATION:.2%}")
                         self.log_rejected_signal(signal, "ENTRY_DEVIATION", f"Entry dev: {entry_deviation:.2%}, Max: {config.SIGNAL_MAX_ENTRY_DEVIATION:.2%}")
                         return False
                     
                     # Check SL price deviation
-                    sl_deviation = abs(signal.sl - current_price) / current_price
+                    sl_deviation = abs(sl_price - current_price) / current_price
                     if sl_deviation > config.SIGNAL_MAX_SL_DEVIATION:
                         logger.warning(f"Signal SL terlalu jauh dari market: {sl_deviation:.2%} > {config.SIGNAL_MAX_SL_DEVIATION:.2%}")
                         self.log_rejected_signal(signal, "SL_DEVIATION", f"SL dev: {sl_deviation:.2%}, Max: {config.SIGNAL_MAX_SL_DEVIATION:.2%}")
                         return False
                     
                     # Check TP1 price deviation
-                    tp1_deviation = abs(signal.tp1 - current_price) / current_price
+                    tp1_deviation = abs(tp1_price - current_price) / current_price
                     if tp1_deviation > config.SIGNAL_MAX_TP_DEVIATION:
                         logger.warning(f"Signal TP1 terlalu jauh dari market: {tp1_deviation:.2%} > {config.SIGNAL_MAX_TP_DEVIATION:.2%}")
                         self.log_rejected_signal(signal, "TP1_DEVIATION", f"TP1 dev: {tp1_deviation:.2%}, Max: {config.SIGNAL_MAX_TP_DEVIATION:.2%}")
                         return False
                     
                     # Check TP2 price deviation
-                    tp2_deviation = abs(signal.tp2 - current_price) / current_price
+                    tp2_deviation = abs(tp2_price - current_price) / current_price
                     if tp2_deviation > config.SIGNAL_MAX_TP_DEVIATION:
                         logger.warning(f"Signal TP2 terlalu jauh dari market: {tp2_deviation:.2%} > {config.SIGNAL_MAX_TP_DEVIATION:.2%}")
                         self.log_rejected_signal(signal, "TP2_DEVIATION", f"TP2 dev: {tp2_deviation:.2%}, Max: {config.SIGNAL_MAX_TP_DEVIATION:.2%}")
@@ -241,6 +305,8 @@ class ICTBot:
                     logger.warning(f"Tidak bisa dapat current price untuk {pair}, skip price validation")
             except Exception as e:
                 logger.warning(f"Price validation error: {e}, skip price validation")
+                # ✅ ENHANCED: Log the specific error for debugging
+                self.log_rejected_signal(signal, "PRICE_VALIDATION_ERROR", f"Error: {str(e)}")
             
             # ✅ ENHANCED: ICT Quality-based filtering
             valid = (
@@ -272,25 +338,48 @@ class ICTBot:
                 try:
                     current_price = self.trader.get_current_price_enhanced(pair)
                     if current_price and current_price > 0:
-                        entry_deviation = abs(signal.entry - current_price) / current_price
+                        # ✅ ENHANCED: Validate signal entry price
+                        if not hasattr(signal, 'entry'):
+                            logger.error(f"Signal missing entry price for execution")
+                            self.log_rejected_signal(signal, "EXECUTION_MISSING_ENTRY", "Signal missing entry price")
+                            return False
+                        
+                        try:
+                            entry_price = float(signal.entry)
+                            if entry_price <= 0:
+                                logger.error(f"Signal entry price is not positive: {entry_price}")
+                                self.log_rejected_signal(signal, "EXECUTION_INVALID_ENTRY", f"Entry price not positive: {entry_price}")
+                                return False
+                        except (ValueError, TypeError) as e:
+                            logger.error(f"Signal entry price is not numeric: {e}")
+                            self.log_rejected_signal(signal, "EXECUTION_INVALID_ENTRY_TYPE", f"Entry price not numeric: {signal.entry}")
+                            return False
+                        
+                        entry_deviation = abs(entry_price - current_price) / current_price
                         if entry_deviation > config.SIGNAL_EXECUTION_DEVIATION:
                             logger.warning(f"❌ Signal ditolak: Market price terlalu jauh untuk execution ({entry_deviation:.2%} > {config.SIGNAL_EXECUTION_DEVIATION:.2%})")
                             self.log_rejected_signal(signal, "EXECUTION_DEVIATION", f"Execution dev: {entry_deviation:.2%}, Max: {config.SIGNAL_EXECUTION_DEVIATION:.2%}")
                             if config.ENABLE_TELEGRAM:
-                                telegram.send_message(
-                                    f"⚠️ *SIGNAL DITOLAK*\n"
-                                    f"📌 Pair: {pair}\n"
-                                    f"🎯 Direction: {signal.direction}\n"
-                                    f"💰 Signal Entry: ${signal.entry:.2f}\n"
-                                    f"💹 Market Price: ${current_price:.2f}\n"
-                                    f"📊 Deviation: {entry_deviation:.2%}\n"
-                                    f"🚫 Max Allowed: {config.SIGNAL_EXECUTION_DEVIATION:.2%}\n\n"
-                                    f"*Alasan:* Market price terlalu jauh dari signal entry"
-                                )
+                                try:
+                                    telegram.send_message(
+                                        f"⚠️ *SIGNAL DITOLAK*\n"
+                                        f"📌 Pair: {pair}\n"
+                                        f"🎯 Direction: {signal.direction}\n"
+                                        f"💰 Signal Entry: ${entry_price:.2f}\n"
+                                        f"💹 Market Price: ${current_price:.2f}\n"
+                                        f"📊 Deviation: {entry_deviation:.2%}\n"
+                                        f"🚫 Max Allowed: {config.SIGNAL_EXECUTION_DEVIATION:.2%}\n\n"
+                                        f"*Alasan:* Market price terlalu jauh dari signal entry"
+                                    )
+                                except Exception as telegram_error:
+                                    logger.error(f"Failed to send Telegram rejection alert: {telegram_error}")
                             return False
                         logger.info(f"✅ Final price validation passed: {entry_deviation:.2%} deviation")
+                    else:
+                        logger.warning(f"Tidak bisa dapat current price untuk {pair} saat execution, skip final validation")
                 except Exception as e:
                     logger.warning(f"Final price validation error: {e}, continue with execution")
+                    self.log_rejected_signal(signal, "EXECUTION_PRICE_ERROR", f"Final validation error: {str(e)}")
             
             # Calculate position size
             risk = self.calculate_risk()

@@ -65,10 +65,18 @@ class Config:
         self.MIN_QUALITY_SCORE = int(os.getenv('MIN_QUALITY_SCORE', 70))
         
         # ✅ Price Deviation Validation Settings
-        self.SIGNAL_MAX_ENTRY_DEVIATION = float(os.getenv('SIGNAL_MAX_ENTRY_DEVIATION', 0.05))  # 5% max entry deviation
-        self.SIGNAL_MAX_SL_DEVIATION = float(os.getenv('SIGNAL_MAX_SL_DEVIATION', 0.10))        # 10% max SL deviation
-        self.SIGNAL_MAX_TP_DEVIATION = float(os.getenv('SIGNAL_MAX_TP_DEVIATION', 0.15))        # 15% max TP deviation
-        self.SIGNAL_EXECUTION_DEVIATION = float(os.getenv('SIGNAL_EXECUTION_DEVIATION', 0.03))  # 3% max for execution
+        try:
+            self.SIGNAL_MAX_ENTRY_DEVIATION = float(os.getenv('SIGNAL_MAX_ENTRY_DEVIATION', 0.05))  # 5% max entry deviation
+            self.SIGNAL_MAX_SL_DEVIATION = float(os.getenv('SIGNAL_MAX_SL_DEVIATION', 0.10))        # 10% max SL deviation
+            self.SIGNAL_MAX_TP_DEVIATION = float(os.getenv('SIGNAL_MAX_TP_DEVIATION', 0.15))        # 15% max TP deviation
+            self.SIGNAL_EXECUTION_DEVIATION = float(os.getenv('SIGNAL_EXECUTION_DEVIATION', 0.03))  # 3% max for execution
+        except (ValueError, TypeError) as e:
+            print(f"❌ Error loading price deviation settings: {e}")
+            print("Using default values...")
+            self.SIGNAL_MAX_ENTRY_DEVIATION = 0.05
+            self.SIGNAL_MAX_SL_DEVIATION = 0.10
+            self.SIGNAL_MAX_TP_DEVIATION = 0.15
+            self.SIGNAL_EXECUTION_DEVIATION = 0.03
         
         # Volatility Range
         self.VOL_RANGE_MIN = float(os.getenv('VOL_RANGE_MIN', 0.4))
