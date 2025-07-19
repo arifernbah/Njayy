@@ -314,8 +314,8 @@ class ICTBot:
                 signal.bias >= 7 and
                 signal.regime >= 7 and
                 safe_get(self.filters, 'vol_range', default=[0,0])[0] <= signal.volatility <= safe_get(self.filters, 'vol_range', default=[0,0])[1] and
-                # ✅ NEW: ICT Quality checks
-                signal.quality_score >= safe_get(self.filters, 'min_quality_score', default=0) and  # Minimum quality score from .env
+                # ✅ FIXED: Use proper quality score default from config
+                signal.quality_score >= safe_get(self.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE) and  # Use config default instead of 0
                 signal.validate_levels()  # Enhanced validation
             )
             if valid and pair:
@@ -437,7 +437,7 @@ class ICTBot:
                 f"Pairs: {pairs}\n"
                 f"Target sinyal: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}/hari\n"
                 f"Risk: {safe_get(self.risk_management, 'default_risk', default=0)*100:.0f}% per trade\n"
-                f"Quality minimal: {safe_get(self.filters, 'min_quality_score', default=0)}\n\n"
+                f"Quality minimal: {safe_get(self.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE)}\n\n"
                 f"Status: Lagi mantau market, siap cari cuan! 🚦\n\n"
                 f"(Psst... Kalau aku error, jangan salahin aku, salahin market aja 😆)"
             )
@@ -493,7 +493,7 @@ class ICTBot:
             f"Max Daily Trades: {safe_get(s.risk_management, 'max_trades', default=0)}\n"
             f"Max Concurrent Trades: {safe_get(s.risk_management, 'max_concurrent', default=0)}\n"
             f"Drawdown Limit: {config.MAX_DRAWDOWN}%\n"
-            f"Min Quality Score: {safe_get(s.filters, 'min_quality_score', default=0)}\n"
+            f"Min Quality Score: {safe_get(s.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE)}\n"
             f"Min Signal Strength: {safe_get(s.filters, 'signal_strength', default=0)}\n"
             f"Min Bias Strength: {safe_get(s.filters, 'bias_strength', default=0)}\n"
             f"Min Regime Score: {safe_get(s.filters, 'regime_score', default=0)}\n"
