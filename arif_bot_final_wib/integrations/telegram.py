@@ -464,11 +464,7 @@ Status: Bot continues running
     def send_main_menu(self):
         """Send main menu with inline keyboard"""
         try:
-            message = """
-🤖 *ARIF BOT - MAIN MENU*
-
-Choose an option:
-            """
+            message = "🤖 ARIF BOT - MAIN MENU\n\nChoose an option:"
             
             # Create inline keyboard
             keyboard = {
@@ -506,14 +502,16 @@ Choose an option:
             
             response = requests.post(url, json=payload, timeout=10)
             if response.status_code == 200:
-                logger.info("Main menu sent successfully")
+                logger.info("✅ Main menu sent successfully")
                 return True
             else:
-                logger.error(f"Failed to send main menu: {response.status_code}")
+                error_data = response.json() if response.content else {}
+                error_msg = safe_get(error_data, 'description', 'Unknown error')
+                logger.error(f"❌ Failed to send main menu: {error_msg}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error sending main menu: {e}")
+            logger.error(f"❌ Error sending main menu: {e}")
             return False
 
     # ===== POLLING & MESSAGE HANDLING =====

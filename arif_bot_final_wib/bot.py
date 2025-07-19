@@ -439,6 +439,7 @@ class ICTBot:
             utc_now = datetime.utcnow()
             wib_now = utc_now + timedelta(hours=7)
             
+            # Simple message without complex formatting
             simple_msg = f"🤖 Arif_Bot Started\nTime: {wib_now.strftime('%H:%M:%S')} WIB"
             
             if telegram.send_message(simple_msg):
@@ -447,18 +448,21 @@ class ICTBot:
                 # Wait a bit then send detailed message
                 time.sleep(1)
                 
-                # Prepare detailed message
+                # Prepare detailed message with minimal formatting
                 pairs = ', '.join(self.trading_pairs)
                 detailed_msg = (
-                    f"📊 *BOT DETAILS*\n"
+                    f"📊 Bot Details\n"
                     f"Pairs: {pairs}\n"
                     f"Target: {config.SIGNAL_TARGET_MIN}-{config.SIGNAL_TARGET_MAX}/hari\n"
                     f"Risk: {safe_get(self.risk_management, 'default_risk', default=config.DEFAULT_RISK/100)*100:.0f}%\n"
                     f"Quality: {safe_get(self.filters, 'min_quality_score', default=config.MIN_QUALITY_SCORE)}\n"
-                    f"Status: 🟢 Running"
+                    f"Status: Running"
                 )
                 
                 telegram.send_message(detailed_msg)
+                
+                # Send menu separately to avoid issues
+                time.sleep(1)
                 telegram.send_main_menu()
                 
             else:
