@@ -141,9 +141,11 @@ class EnhancedICTTrader:
             logger.error(f"Failed to restore open positions/orders on startup: {e}")
         # === Log initial balance at startup ===
         try:
+            # Ensure logs directory exists
+            os.makedirs("logs", exist_ok=True)
             balance = self.get_account_balance()
             logger.info(f"[STARTUP] Initial balance: {balance:.2f} USDT")
-            with open("equity.log", "a") as f:
+            with open("logs/equity.log", "a") as f:
                 f.write(f"[{datetime.utcnow()}] STARTUP BALANCE: {balance:.2f} USDT\n")
         except Exception as e:
             logger.error(f"[STARTUP] Failed to log initial balance: {e}")
@@ -561,9 +563,11 @@ class EnhancedICTTrader:
 
     def log_equity(self, event="PERIODIC"):
         try:
+            # Ensure logs directory exists
+            os.makedirs("logs", exist_ok=True)
             equity = self.get_account_balance()
             log_line = f"[{datetime.utcnow()}] Equity: {equity:.2f} USDT (after {event} {self.symbol})\n"
-            with open("equity.log", "a") as f:
+            with open("logs/equity.log", "a") as f:
                 f.write(log_line)
         except Exception as e:
             logger.error(f"Failed to log equity: {e}")

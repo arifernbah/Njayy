@@ -130,12 +130,14 @@ class ICTBot:
 
     def log_valid_signal(self, signal):
         try:
+            # Ensure logs directory exists
+            os.makedirs("logs", exist_ok=True)
             log_line = (
                 f"[{datetime.utcnow()}] VALID SIGNAL: {signal.pair} {signal.direction} "
                 f"entry={signal.entry} sl={signal.sl} tp1={signal.tp1} tp2={signal.tp2} "
                 f"score={getattr(signal, 'quality_score', 'N/A')} zone={getattr(signal, 'zone_position', 'N/A')}\n"
             )
-            with open("valid_signals.log", "a") as f:
+            with open("logs/valid_signals.log", "a") as f:
                 f.write(log_line)
         except Exception as e:
             logger.error(f"Failed to log valid signal: {e}")
