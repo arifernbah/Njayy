@@ -64,6 +64,12 @@ class Config:
         self.MIN_REGIME_SCORE = int(os.getenv('MIN_REGIME_SCORE', 55))
         self.MIN_QUALITY_SCORE = int(os.getenv('MIN_QUALITY_SCORE', 70))
         
+        # ✅ Price Deviation Validation Settings
+        self.SIGNAL_MAX_ENTRY_DEVIATION = float(os.getenv('SIGNAL_MAX_ENTRY_DEVIATION', 0.05))  # 5% max entry deviation
+        self.SIGNAL_MAX_SL_DEVIATION = float(os.getenv('SIGNAL_MAX_SL_DEVIATION', 0.10))        # 10% max SL deviation
+        self.SIGNAL_MAX_TP_DEVIATION = float(os.getenv('SIGNAL_MAX_TP_DEVIATION', 0.15))        # 15% max TP deviation
+        self.SIGNAL_EXECUTION_DEVIATION = float(os.getenv('SIGNAL_EXECUTION_DEVIATION', 0.03))  # 3% max for execution
+        
         # Volatility Range
         self.VOL_RANGE_MIN = float(os.getenv('VOL_RANGE_MIN', 0.4))
         self.VOL_RANGE_MAX = float(os.getenv('VOL_RANGE_MAX', 1.8))
@@ -150,6 +156,19 @@ class Config:
         
         if self.MIN_QUALITY_SCORE < 0 or self.MIN_QUALITY_SCORE > 100:
             raise ValueError("MIN_QUALITY_SCORE should be between 0 and 100")
+        
+        # ✅ Price deviation validation
+        if self.SIGNAL_MAX_ENTRY_DEVIATION <= 0 or self.SIGNAL_MAX_ENTRY_DEVIATION > 0.20:
+            raise ValueError("SIGNAL_MAX_ENTRY_DEVIATION should be between 0 and 20%")
+        
+        if self.SIGNAL_MAX_SL_DEVIATION <= 0 or self.SIGNAL_MAX_SL_DEVIATION > 0.30:
+            raise ValueError("SIGNAL_MAX_SL_DEVIATION should be between 0 and 30%")
+        
+        if self.SIGNAL_MAX_TP_DEVIATION <= 0 or self.SIGNAL_MAX_TP_DEVIATION > 0.50:
+            raise ValueError("SIGNAL_MAX_TP_DEVIATION should be between 0 and 50%")
+        
+        if self.SIGNAL_EXECUTION_DEVIATION <= 0 or self.SIGNAL_EXECUTION_DEVIATION > 0.10:
+            raise ValueError("SIGNAL_EXECUTION_DEVIATION should be between 0 and 10%")
         
         # ✅ Trading pair validation
         if not self.TRADING_PAIRS or len(self.TRADING_PAIRS) == 0:
@@ -286,9 +305,18 @@ class Config:
     
     # ✅ Added method to get leverage settings
     def get_leverage_settings(self):
-        """Get leverage configuration settings"""
+        """Get leverage configuration"""
         return {
             'leverage': self.LEVERAGE
+        }
+    
+    def get_price_deviation_settings(self):
+        """Get price deviation validation settings"""
+        return {
+            'max_entry_deviation': self.SIGNAL_MAX_ENTRY_DEVIATION,
+            'max_sl_deviation': self.SIGNAL_MAX_SL_DEVIATION,
+            'max_tp_deviation': self.SIGNAL_MAX_TP_DEVIATION,
+            'execution_deviation': self.SIGNAL_EXECUTION_DEVIATION
         }
 
 # Create global config instance

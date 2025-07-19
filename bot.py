@@ -168,8 +168,23 @@ class ICTBot:
         except Exception as e:
             logger.error(f"Failed to log valid signal: {e}")
 
+    def log_rejected_signal(self, signal, reason, details=None):
+        """Log rejected signals with detailed information"""
+        try:
+            # Ensure logs directory exists
+            os.makedirs("logs", exist_ok=True)
+            log_line = (
+                f"[{datetime.utcnow()}] REJECTED SIGNAL: {signal.pair} {signal.direction} "
+                f"entry={signal.entry} sl={signal.sl} tp1={signal.tp1} tp2={signal.tp2} "
+                f"reason={reason} details={details}\n"
+            )
+            with open("logs/rejected_signals.log", "a") as f:
+                f.write(log_line)
+        except Exception as e:
+            logger.error(f"Failed to log rejected signal: {e}")
+
     def validate_signal(self, signal):
-        """Enhanced signal validation with ICT quality checks"""
+        """Enhanced signal validation with ICT quality checks and price deviation validation"""
         try:
             # Killzone WIB diperpanjang: 08:00-18:00 (Asia+London panjang), NY tetap 19:00-22:00
             from datetime import datetime, timedelta
@@ -188,6 +203,45 @@ class ICTBot:
                 if pair in last_entry and last_entry[pair] is not None:
                     if (utc_now - last_entry[pair]).total_seconds() < 20*60:
                         return False
+            
+            # ✅ NEW: Price Deviation Validation
+            try:
+                current_price = self.trader.get_current_price_enhanced(pair)
+                if current_price and current_price > 0:
+                    # Check entry price deviation
+                    entry_deviation = abs(signal.entry - current_price) / current_price
+                    if entry_deviation > config.SIGNAL_MAX_ENTRY_DEVIATION:
+                        logger.warning(f"Signal entry terlalu jauh dari market: {entry_deviation:.2%} > {config.SIGNAL_MAX_ENTRY_DEVIATION:.2%}")
+                        self.log_rejected_signal(signal, "ENTRY_DEVIATION", f"Entry dev: {entry_deviation:.2%}, Max: {config.SIGNAL_MAX_ENTRY_DEVIATION:.2%}")
+                        return False
+                    
+                    # Check SL price deviation
+                    sl_deviation = abs(signal.sl - current_price) / current_price
+                    if sl_deviation > config.SIGNAL_MAX_SL_DEVIATION:
+                        logger.warning(f"Signal SL terlalu jauh dari market: {sl_deviation:.2%} > {config.SIGNAL_MAX_SL_DEVIATION:.2%}")
+                        self.log_rejected_signal(signal, "SL_DEVIATION", f"SL dev: {sl_deviation:.2%}, Max: {config.SIGNAL_MAX_SL_DEVIATION:.2%}")
+                        return False
+                    
+                    # Check TP1 price deviation
+                    tp1_deviation = abs(signal.tp1 - current_price) / current_price
+                    if tp1_deviation > config.SIGNAL_MAX_TP_DEVIATION:
+                        logger.warning(f"Signal TP1 terlalu jauh dari market: {tp1_deviation:.2%} > {config.SIGNAL_MAX_TP_DEVIATION:.2%}")
+                        self.log_rejected_signal(signal, "TP1_DEVIATION", f"TP1 dev: {tp1_deviation:.2%}, Max: {config.SIGNAL_MAX_TP_DEVIATION:.2%}")
+                        return False
+                    
+                    # Check TP2 price deviation
+                    tp2_deviation = abs(signal.tp2 - current_price) / current_price
+                    if tp2_deviation > config.SIGNAL_MAX_TP_DEVIATION:
+                        logger.warning(f"Signal TP2 terlalu jauh dari market: {tp2_deviation:.2%} > {config.SIGNAL_MAX_TP_DEVIATION:.2%}")
+                        self.log_rejected_signal(signal, "TP2_DEVIATION", f"TP2 dev: {tp2_deviation:.2%}, Max: {config.SIGNAL_MAX_TP_DEVIATION:.2%}")
+                        return False
+                    
+                    logger.info(f"✅ Price validation passed: Entry={entry_deviation:.2%}, SL={sl_deviation:.2%}, TP1={tp1_deviation:.2%}, TP2={tp2_deviation:.2%}")
+                else:
+                    logger.warning(f"Tidak bisa dapat current price untuk {pair}, skip price validation")
+            except Exception as e:
+                logger.warning(f"Price validation error: {e}, skip price validation")
+            
             # ✅ ENHANCED: ICT Quality-based filtering
             valid = (
                 signal.strength >= 8 and
@@ -210,8 +264,34 @@ class ICTBot:
             return False
 
     def execute_signal(self, signal, bias):
-        """Execute validated signal with ICT quality enhancements"""
+        """Execute validated signal with ICT quality enhancements and price validation"""
         try:
+            # ✅ NEW: Final Price Validation before execution
+            pair = getattr(signal, 'pair', None) or getattr(signal, 'symbol', None)
+            if pair:
+                try:
+                    current_price = self.trader.get_current_price_enhanced(pair)
+                    if current_price and current_price > 0:
+                        entry_deviation = abs(signal.entry - current_price) / current_price
+                        if entry_deviation > config.SIGNAL_EXECUTION_DEVIATION:
+                            logger.warning(f"❌ Signal ditolak: Market price terlalu jauh untuk execution ({entry_deviation:.2%} > {config.SIGNAL_EXECUTION_DEVIATION:.2%})")
+                            self.log_rejected_signal(signal, "EXECUTION_DEVIATION", f"Execution dev: {entry_deviation:.2%}, Max: {config.SIGNAL_EXECUTION_DEVIATION:.2%}")
+                            if config.ENABLE_TELEGRAM:
+                                telegram.send_message(
+                                    f"⚠️ *SIGNAL DITOLAK*\n"
+                                    f"📌 Pair: {pair}\n"
+                                    f"🎯 Direction: {signal.direction}\n"
+                                    f"💰 Signal Entry: ${signal.entry:.2f}\n"
+                                    f"💹 Market Price: ${current_price:.2f}\n"
+                                    f"📊 Deviation: {entry_deviation:.2%}\n"
+                                    f"🚫 Max Allowed: {config.SIGNAL_EXECUTION_DEVIATION:.2%}\n\n"
+                                    f"*Alasan:* Market price terlalu jauh dari signal entry"
+                                )
+                            return False
+                        logger.info(f"✅ Final price validation passed: {entry_deviation:.2%} deviation")
+                except Exception as e:
+                    logger.warning(f"Final price validation error: {e}, continue with execution")
+            
             # Calculate position size
             risk = self.calculate_risk()
             position_size = self.trader.calculate_position_size(signal, risk)
@@ -333,7 +413,12 @@ class ICTBot:
             f"Session: London {config.LONDON_START}-{config.LONDON_END}, NY {config.NY_START}-{config.NY_END}, Asia {config.ASIAN_START}-{config.ASIAN_END}\n"
             f"Pairs: {', '.join(self.trading_pairs)}\n"
             f"Loop Interval: {config.LOOP_INTERVAL}s\n"
-            f"Telegram: {config.ENABLE_TELEGRAM}"
+            f"Telegram: {config.ENABLE_TELEGRAM}\n\n"
+            f"🔒 *PRICE VALIDATION*\n"
+            f"Max Entry Deviation: {config.SIGNAL_MAX_ENTRY_DEVIATION:.1%}\n"
+            f"Max SL Deviation: {config.SIGNAL_MAX_SL_DEVIATION:.1%}\n"
+            f"Max TP Deviation: {config.SIGNAL_MAX_TP_DEVIATION:.1%}\n"
+            f"Execution Deviation: {config.SIGNAL_EXECUTION_DEVIATION:.1%}"
         )
         return settings
 
