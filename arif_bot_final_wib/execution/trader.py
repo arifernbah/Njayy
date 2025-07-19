@@ -1538,6 +1538,22 @@ class EnhancedICTTrader:
             if required_margin_with_buffer > balance:
                 logger.warning(f"❌ Margin tidak cukup. Dibutuhkan: {required_margin_with_buffer:.2f}, tersedia: {balance:.2f}")
                 
+                # ✅ ADD: Send Telegram notification for margin insufficient
+                if config.ENABLE_TELEGRAM:
+                    try:
+                        telegram.send_message(
+                            f"⚠️ *MARGIN INSUFFICIENT*\n"
+                            f"📌 Pair: {self.symbol}\n"
+                            f"💰 Required: ${required_margin_with_buffer:.2f}\n"
+                            f"💳 Available: ${balance:.2f}\n"
+                            f"📊 Leverage: {effective_leverage}x\n"
+                            f"📈 Position Size: {position_size}\n"
+                            f"🎯 Entry Price: ${entry_price:.2f}\n\n"
+                            f"*Suggestion:* Top up balance or reduce position size"
+                        )
+                    except Exception as e:
+                        logger.error(f"Failed to send margin insufficient notification: {e}")
+                
                 # Suggest alternatives for small balance
                 if balance < config.SMALL_BALANCE_THRESHOLD:
                     logger.info(f"💡 Saran untuk balance kecil (${balance:.2f}):")
