@@ -397,7 +397,7 @@ class ICTBot:
                     telegram.send_trade_alert(signal, bias, risk, position_size)
                 
                 # ✅ ADDITIONAL: Send ICT quality analysis
-                if signal.quality_score >= 80:
+                if signal.quality_score >= config.MIN_QUALITY_SCORE + 10:  # Premium threshold
                     telegram.send_ict_quality_alert(signal, bias)
                 
         except Exception as e:
